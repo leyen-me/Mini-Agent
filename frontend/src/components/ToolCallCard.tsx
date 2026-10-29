@@ -1,106 +1,64 @@
-import { ChevronDown, ChevronRight, Clock3, Wrench } from 'lucide-react';
+import { ArrowUpRight, ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 import type { ToolCall } from '../api/types';
-import { CopyButton } from './CopyButton';
-import { DiffView } from './DiffView';
+import { summarizeToolCall, toolCallDuration, toolIcon } from '../lib/tools';
+import { useInspector } from '../state/InspectorContext';
+import { cn } from '@/lib/utils';
+import { ToolCallDetail } from './Inspector';
 import { RiskBadge, ToolStatusBadge } from './StatusBadge';
-import { useUi } from '../state/UiContext';
-
-function summarize(call: ToolCall): string {
-  const { input } = call;
-  const candidate =
-    (input.command as string | undefined) ||
-    (input.path as string | undefined) ||
-    (input.url as string | undefined) ||
-    (input.pattern as string | undefined) ||
-    (input.task_id as string | undefined);
-  if (candidate) return candidate;
-  return Object.keys(input).length ? JSON.stringify(input) : '—';
-}
-
-function duration(call: ToolCall): string | null {
-  if (!call.startedAt) return null;
-  const start = new Date(call.startedAt).getTime();
-  const end = call.endedAt ? new Date(call.endedAt).getTime() : Date.now();
-  const ms = Math.max(0, end - start);
-  if (!call.endedAt) return '…';
-  return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
-}
 
 export function ToolCallCard({ call }: { call: ToolCall }) {
-  const { t } = useUi();
+  const inspector = useInspector();
   const [open, setOpen] = useState(false);
-  const elapsed = duration(call);
-  const Chevron = open ? ChevronDown : ChevronRight;
-  const data = (call.output?.data ?? null) as Record<string, unknown> | null;
-  const diff = typeof data?.diff === 'string' ? data.diff : '';
+  const Icon = toolIcon(call.name);
+  const elapsed = toolCallDuration(call);
+  const selected = inspector?.selectedToolCallId === call.id;
+  const expanded = !inspector && open;
+
   return (
-    <div className={`tool-card tool-card-${call.status}`}>
+    <div
+      className={cn(
+        `tool-card tool-card-${call.status} border border-border bg-background transition-colors`,
+        'hover:border-border-strong',
+        call.status === 'awaiting_permission' && 'border-warning/50',
+        ['failed', 'denied', 'timeout'].includes(call.status) && 'border-destructive/35',
+        selected && 'border-foreground hover:border-foreground',
+      )}
+    >
       <button
         type="button"
-        className="tool-card-header"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
+        onClick={() => (inspector ? inspector.focusToolCall(call.id) : setOpen((v) => !v))}
+        aria-expanded={inspector ? undefined : expanded}
+        aria-pressed={inspector ? selected : undefined}
+        className="group flex h-10 w-full min-w-0 items-center gap-3 px-3 text-left"
       >
-        <Chevron size={14} aria-hidden="true" />
-        <Wrench size={14} aria-hidden="true" />
-        <span className="tool-name">{call.name}</span>
-        <ToolStatusBadge status={call.status} />
-        {call.risk !== 'low' && <RiskBadge risk={call.risk} />}
-        {elapsed && (
-          <span className="tool-duration">
-            <Clock3 size={12} aria-hidden="true" /> {elapsed}
-          </span>
-        )}
-        <span className="tool-summary">{summarize(call)}</span>
+        <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <span className="shrink-0 font-mono text-[12.5px] font-medium">{call.name}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-muted-foreground">
+          {summarizeToolCall(call)}
+        </span>
+        <span className="flex shrink-0 items-center gap-3">
+          {call.risk !== 'low' && <RiskBadge risk={call.risk} />}
+          {elapsed && (
+            <span className="hidden font-mono text-[11px] text-subtle tabular-nums sm:inline">
+              {elapsed}
+            </span>
+          )}
+          <ToolStatusBadge status={call.status} />
+          {inspector ? (
+            <ArrowUpRight
+              className="size-3.5 text-subtle transition-colors group-hover:text-foreground"
+              aria-hidden="true"
+            />
+          ) : (
+            <ChevronRight
+              className={cn('size-3.5 text-subtle transition-transform', expanded && 'rotate-90')}
+              aria-hidden="true"
+            />
+          )}
+        </span>
       </button>
-      {open && (
-        <div className="tool-card-body">
-          <div className="tool-json-grid">
-            <section>
-              <header>
-                <h4>{t('chat.toolInput')}</h4>
-                <CopyButton
-                  text={JSON.stringify(call.input, null, 2)}
-                  label={t('chat.toolCopyInput')}
-                />
-              </header>
-              <pre>{JSON.stringify(call.input, null, 2)}</pre>
-            </section>
-            <section>
-              <header>
-                <h4>{t('chat.toolOutput')}</h4>
-                <CopyButton
-                  text={call.output ? JSON.stringify(call.output, null, 2) : ''}
-                  label={t('chat.toolCopyOutput')}
-                />
-              </header>
-              <pre>
-                {call.output
-                  ? JSON.stringify(call.output, null, 2)
-                  : t('chat.toolNoOutput')}
-              </pre>
-            </section>
-          </div>
-          {diff && (
-            <section className="tool-diff">
-              <header>
-                <h4>{t('chat.diff')}</h4>
-                <CopyButton text={diff} label={t('chat.diff')} />
-              </header>
-              <DiffView diff={diff} />
-            </section>
-          )}
-          {call.output?.truncated && (
-            <p className="tool-truncated">
-              {t('chat.toolOutput')} {call.output.artifacts.join(', ')}
-            </p>
-          )}
-          {call.errorCode && (
-            <p className="tool-error-code">{call.errorCode}</p>
-          )}
-        </div>
-      )}
+      {expanded && <ToolCallDetail call={call} />}
     </div>
   );
 }

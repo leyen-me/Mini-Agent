@@ -4,6 +4,10 @@ import { api } from '../../api/client';
 import type { AgentInfo } from '../../api/types';
 import type { ToastFn } from './useAdmin';
 import { runAction, splitList } from './useAdmin';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 
 interface Props {
   agents: AgentInfo[];
@@ -123,20 +127,20 @@ export function AgentsPanel({ agents, onToast, onReload }: Props) {
             </p>
           </div>
           <div className="admin-actions">
-            <button
+            <Button
               type="button"
-              className="secondary-button"
+              variant="outline" size="sm"
               onClick={() => importRef.current?.click()}
             >
               <Upload size={14} /> 导入
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="primary-button"
+              size="sm"
               onClick={() => setEditing(null)}
             >
               <Plus size={14} /> 新建
-            </button>
+            </Button>
             <input
               ref={importRef}
               type="file"
@@ -178,16 +182,16 @@ export function AgentsPanel({ agents, onToast, onReload }: Props) {
                 </p>
               </div>
               <div className="admin-actions">
-                <button
+                <Button
                   type="button"
-                  className="secondary-button"
+                  variant="outline" size="sm"
                   onClick={() => setEditing(agent)}
                 >
                   编辑
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className="secondary-button"
+                  variant="outline" size="sm"
                   onClick={() =>
                     void runAction(
                       () => api.agentsApi.duplicate(agent.id),
@@ -199,10 +203,10 @@ export function AgentsPanel({ agents, onToast, onReload }: Props) {
                   }
                 >
                   复制
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className="secondary-button"
+                  variant="outline" size="sm"
                   onClick={() =>
                     void runAction(
                       async () => {
@@ -223,10 +227,10 @@ export function AgentsPanel({ agents, onToast, onReload }: Props) {
                   }
                 >
                   导出
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className="icon-button danger"
+                  variant="ghost" size="icon-sm" className="text-muted-foreground hover:bg-danger-soft hover:text-destructive"
                   aria-label="删除 Agent"
                   disabled={agent.builtin}
                   onClick={() =>
@@ -240,7 +244,7 @@ export function AgentsPanel({ agents, onToast, onReload }: Props) {
                   }
                 >
                   <Trash2 size={14} />
-                </button>
+                </Button>
               </div>
             </div>
           ))}
@@ -252,7 +256,7 @@ export function AgentsPanel({ agents, onToast, onReload }: Props) {
         <div className="form-grid">
           <label className="field">
             <span>名称</span>
-            <input
+            <Input
               value={draft.name}
               onChange={(event) =>
                 setDraft({ ...draft, name: event.target.value })
@@ -261,7 +265,7 @@ export function AgentsPanel({ agents, onToast, onReload }: Props) {
           </label>
           <label className="field">
             <span>默认模型</span>
-            <input
+            <Input
               value={draft.defaultModel}
               placeholder="provider/model"
               onChange={(event) =>
@@ -271,7 +275,7 @@ export function AgentsPanel({ agents, onToast, onReload }: Props) {
           </label>
           <label className="field wide">
             <span>描述</span>
-            <input
+            <Input
               value={draft.description}
               onChange={(event) =>
                 setDraft({ ...draft, description: event.target.value })
@@ -280,7 +284,7 @@ export function AgentsPanel({ agents, onToast, onReload }: Props) {
           </label>
           <label className="field wide">
             <span>系统 Prompt</span>
-            <textarea
+            <Textarea
               rows={4}
               value={draft.systemPrompt}
               onChange={(event) =>
@@ -290,7 +294,7 @@ export function AgentsPanel({ agents, onToast, onReload }: Props) {
           </label>
           <label className="field wide">
             <span>工具白名单（逗号分隔，留空为全部）</span>
-            <input
+            <Input
               value={draft.tools}
               placeholder="read_file, grep, shell"
               onChange={(event) =>
@@ -300,7 +304,7 @@ export function AgentsPanel({ agents, onToast, onReload }: Props) {
           </label>
           <label className="field">
             <span>默认 Skill</span>
-            <input
+            <Input
               value={draft.skills}
               placeholder="code-review"
               onChange={(event) =>
@@ -310,7 +314,7 @@ export function AgentsPanel({ agents, onToast, onReload }: Props) {
           </label>
           <label className="field">
             <span>默认 MCP</span>
-            <input
+            <Input
               value={draft.mcp}
               placeholder="mcp_..."
               onChange={(event) =>
@@ -320,7 +324,7 @@ export function AgentsPanel({ agents, onToast, onReload }: Props) {
           </label>
           <label className="field">
             <span>权限 JSON</span>
-            <textarea
+            <Textarea
               rows={3}
               value={draft.permissions}
               onChange={(event) =>
@@ -330,7 +334,7 @@ export function AgentsPanel({ agents, onToast, onReload }: Props) {
           </label>
           <label className="field">
             <span>结构化输出 JSON Schema（可选）</span>
-            <textarea
+            <Textarea
               rows={3}
               value={draft.structuredOutput}
               onChange={(event) =>
@@ -339,32 +343,31 @@ export function AgentsPanel({ agents, onToast, onReload }: Props) {
             />
           </label>
           <label className="checkbox-field">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={draft.readOnly}
-              onChange={(event) =>
-                setDraft({ ...draft, readOnly: event.target.checked })
+              onCheckedChange={(checked) =>
+                setDraft({ ...draft, readOnly: checked === true })
               }
             />
             <span>只读（强制 Plan 模式）</span>
           </label>
         </div>
         <div className="admin-actions">
-          <button
+          <Button
             type="button"
-            className="primary-button"
+            size="sm"
             onClick={() => void save()}
           >
             {editing ? '保存' : '创建'}
-          </button>
+          </Button>
           {editing && (
-            <button
+            <Button
               type="button"
-              className="secondary-button"
+              variant="outline" size="sm"
               onClick={() => setEditing(null)}
             >
               取消
-            </button>
+            </Button>
           )}
         </div>
       </section>

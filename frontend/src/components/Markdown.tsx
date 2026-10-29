@@ -31,12 +31,12 @@ export function Markdown({ children }: { children: string }) {
           pre: ({ children: preChildren }) => {
             const text = nodeText(preChildren);
             return (
-              <div className="code-block">
+              <div className="code-block group/code">
                 <CopyButton
                   text={text}
                   label="Copy code"
                   iconOnly
-                  className="code-copy"
+                  className="absolute top-2 right-2 bg-white/5 text-neutral-400 opacity-0 group-hover/code:opacity-100 hover:bg-white/15 hover:text-white focus-visible:opacity-100"
                 />
                 <pre>{preChildren}</pre>
               </div>

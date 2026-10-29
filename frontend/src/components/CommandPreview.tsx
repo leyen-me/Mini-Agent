@@ -3,6 +3,9 @@ import { useEffect, useState } from 'react';
 import { api, errorMessage } from '../api/client';
 import type { CommandInfo } from '../api/types';
 import { useUi } from '../state/UiContext';
+import { Field } from '@/components/common/Field';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Modal } from './Modal';
 
 interface Props {
@@ -71,48 +74,38 @@ export function CommandPreview({
     <Modal
       open={Boolean(command)}
       title={`/${command?.name ?? ''}`}
+      description={command ? command.description || t('chat.customCommandHint') : undefined}
       onClose={onClose}
+      footer={
+        command && (
+          <>
+            <Button variant="ghost" onClick={onClose}>
+              {t('app.cancel')}
+            </Button>
+            <Button onClick={() => void run()} disabled={!prompt.trim() || running}>
+              <Play /> {t('chat.runCommand')}
+            </Button>
+          </>
+        )
+      }
     >
       {command && (
-        <div className="command-preview">
-          <p className="muted">
-            {command.description || t('chat.customCommandHint')}
-          </p>
-          <label className="field">
-            <span>{t('chat.commandArguments')}</span>
-            <input
+        <div className="flex flex-col gap-6">
+          <Field label={t('chat.commandArguments')}>
+            <Input
               autoFocus
               value={args}
               onChange={(event) => setArgs(event.target.value)}
               placeholder={t('chat.commandArgumentsHint')}
             />
-          </label>
+          </Field>
           <section className="command-prompt-preview">
             <header>
               <span>{t('chat.commandPreview')}</span>
-              {loading && (
-                <span className="muted small">{t('app.loading')}…</span>
-              )}
+              {loading && <span>{t('app.loading')}…</span>}
             </header>
             <pre>{prompt}</pre>
           </section>
-          <div className="modal-actions">
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={onClose}
-            >
-              {t('app.cancel')}
-            </button>
-            <button
-              type="button"
-              className="primary-button"
-              onClick={() => void run()}
-              disabled={!prompt.trim() || running}
-            >
-              <Play size={14} aria-hidden="true" /> {t('chat.runCommand')}
-            </button>
-          </div>
         </div>
       )}
     </Modal>

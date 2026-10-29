@@ -4,6 +4,10 @@ import { api } from '../../api/client';
 import type { Session, SkillInfo } from '../../api/types';
 import type { ToastFn } from './useAdmin';
 import { runAction } from './useAdmin';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { SimpleSelect } from '@/components/common/SimpleSelect';
 
 interface Props {
   session: Session | null;
@@ -99,17 +103,17 @@ export function SkillsPanel({ session, activeWorkspace, onToast }: Props) {
                 </p>
               </div>
               <div className="admin-actions">
-                <button
+                <Button
                   type="button"
-                  className="secondary-button"
+                  variant="outline" size="sm"
                   onClick={() => void show(skill)}
                 >
                   {expanded === skill.name ? '收起' : '查看'}
-                </button>
+                </Button>
                 {session && (
-                  <button
+                  <Button
                     type="button"
-                    className="secondary-button"
+                    variant="outline" size="sm"
                     onClick={() =>
                       void runAction(
                         () =>
@@ -126,12 +130,12 @@ export function SkillsPanel({ session, activeWorkspace, onToast }: Props) {
                     }
                   >
                     {skill.enabled ? '停用' : '启用'}
-                  </button>
+                  </Button>
                 )}
                 {skill.scope !== 'builtin' && (
-                  <button
+                  <Button
                     type="button"
-                    className="icon-button danger"
+                    variant="ghost" size="icon-sm" className="text-muted-foreground hover:bg-danger-soft hover:text-destructive"
                     aria-label="删除 Skill"
                     onClick={() =>
                       void runAction(
@@ -151,7 +155,7 @@ export function SkillsPanel({ session, activeWorkspace, onToast }: Props) {
                     }
                   >
                     <Trash2 size={14} />
-                  </button>
+                  </Button>
                 )}
               </div>
               {expanded === skill.name && (
@@ -167,22 +171,20 @@ export function SkillsPanel({ session, activeWorkspace, onToast }: Props) {
         <div className="form-grid">
           <label className="field">
             <span>作用域</span>
-            <select
+            <SimpleSelect
               value={form.scope}
-              onChange={(event) =>
-                setForm({
-                  ...form,
-                  scope: event.target.value as 'system' | 'workspace',
-                })
+              onValueChange={(value) =>
+                setForm({ ...form, scope: value as 'system' | 'workspace' })
               }
-            >
-              <option value="system">系统（data/skills）</option>
-              <option value="workspace">工作区（.mini-agent/skills）</option>
-            </select>
+              options={[
+                { value: 'system', label: '系统（data/skills）' },
+                { value: 'workspace', label: '工作区（.mini-agent/skills）' },
+              ]}
+            />
           </label>
           <label className="field">
             <span>名称</span>
-            <input
+            <Input
               value={form.name}
               onChange={(event) =>
                 setForm({ ...form, name: event.target.value })
@@ -192,7 +194,7 @@ export function SkillsPanel({ session, activeWorkspace, onToast }: Props) {
           </label>
           <label className="field wide">
             <span>描述</span>
-            <input
+            <Input
               value={form.description}
               onChange={(event) =>
                 setForm({ ...form, description: event.target.value })
@@ -201,7 +203,7 @@ export function SkillsPanel({ session, activeWorkspace, onToast }: Props) {
           </label>
           <label className="field wide">
             <span>正文（Markdown）</span>
-            <textarea
+            <Textarea
               rows={8}
               value={form.content}
               onChange={(event) =>
@@ -210,14 +212,14 @@ export function SkillsPanel({ session, activeWorkspace, onToast }: Props) {
             />
           </label>
         </div>
-        <button
+        <Button
           type="button"
-          className="primary-button"
+          size="sm"
           disabled={!form.name.trim()}
           onClick={() => void save()}
         >
           <Plus size={14} /> 保存 Skill
-        </button>
+        </Button>
       </section>
     </div>
   );

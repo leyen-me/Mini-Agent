@@ -1,79 +1,78 @@
-import { X } from 'lucide-react';
 import { useEffect, useRef, type ReactNode } from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { cn } from '@/lib/utils';
 import { useUi } from '../state/UiContext';
 
 interface Props {
   open: boolean;
   title: string;
+  description?: ReactNode;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
   className?: string;
+  bodyClassName?: string;
   wide?: boolean;
 }
 
-export function Modal({ open, title, onClose, children, footer, className = '', wide = false }: Props) {
+export function Modal({
+  open,
+  title,
+  description,
+  onClose,
+  children,
+  footer,
+  className,
+  bodyClassName,
+  wide = false,
+}: Props) {
   const { t } = useUi();
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const previousFocus = useRef<Element | null>(null);
-
+  const openedAt = useRef(0);
   useEffect(() => {
-    if (!open) return;
-    previousFocus.current = document.activeElement;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation();
-        onClose();
-      }
-      if (event.key === 'Tab' && dialogRef.current) {
-        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-        );
-        if (!focusable.length) return;
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
-      }
-    };
-    document.addEventListener('keydown', onKeyDown);
-    const timer = window.setTimeout(() => {
-      dialogRef.current?.querySelector<HTMLElement>('input, textarea, select, button')?.focus();
-    }, 30);
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-      window.clearTimeout(timer);
-      document.body.style.overflow = previousOverflow;
-      (previousFocus.current as HTMLElement | null)?.focus?.();
-    };
-  }, [open, onClose]);
-
-  if (!open) return null;
+    if (open) openedAt.current = performance.now();
+  }, [open]);
   return (
-    <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div
-        className={`modal ${wide ? 'modal-wide' : ''} ${className}`}
-        role="dialog"
-        aria-modal="true"
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent
         aria-label={title}
-        ref={dialogRef}
+        closeLabel={t('app.close')}
+        aria-describedby={undefined}
+        // The pointerdown that started the click which opened this dialog can
+        // reach its outside-click handler and close it immediately; only
+        // pointer presses that begin after the dialog opened are dismissals.
+        onPointerDownOutside={(event) => {
+          if (event.detail.originalEvent.timeStamp < openedAt.current) event.preventDefault();
+        }}
+        className={cn(
+          'flex max-h-[min(88dvh,920px)] flex-col gap-0 overflow-hidden border-border p-0 sm:max-w-[600px]',
+          wide && 'sm:max-w-[min(1080px,calc(100%-3rem))]',
+          className,
+        )}
       >
-        <header className="modal-header">
-          <h2>{title}</h2>
-          <button type="button" className="icon-button" onClick={onClose} aria-label={t('app.close')}>
-            <X size={18} aria-hidden="true" />
-          </button>
+        <header className="flex shrink-0 flex-col gap-1 border-b border-border px-6 py-5 pr-14">
+          <DialogTitle className="text-base font-semibold tracking-tight">
+            {title}
+          </DialogTitle>
+          {description && (
+            <DialogDescription className="text-[13px] text-muted-foreground">
+              {description}
+            </DialogDescription>
+          )}
         </header>
-        <div className="modal-body">{children}</div>
-        {footer && <footer className="modal-footer">{footer}</footer>}
-      </div>
-    </div>
+        <div className={cn('min-h-0 flex-1 overflow-y-auto px-6 py-6', bodyClassName)}>
+          {children}
+        </div>
+        {footer && (
+          <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-border bg-muted/50 px-6 py-4">
+            {footer}
+          </footer>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

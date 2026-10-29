@@ -24,4 +24,9 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },
+  {
+    // shadcn/ui primitives intentionally co-export variant helpers (e.g. buttonVariants).
+    files: ['src/components/ui/**/*.tsx'],
+    rules: { 'react-refresh/only-export-components': 'off' },
+  },
 );

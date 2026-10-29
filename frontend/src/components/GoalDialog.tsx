@@ -2,6 +2,10 @@ import { Target } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { Goal } from '../api/types';
 import { useUi } from '../state/UiContext';
+import { Field } from '@/components/common/Field';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Modal } from './Modal';
 
 interface Props {
@@ -94,53 +98,43 @@ export function GoalDialog({ open, goal, onClose, onSave }: Props) {
       open={open}
       title={goal ? t('chat.goal.title') : t('chat.goal.set')}
       onClose={onClose}
+      description={t('inspector.noGoalHint')}
       footer={
         <>
-          <button type="button" className="text-button" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose}>
             {t('app.cancel')}
-          </button>
-          <button
-            type="button"
-            className="primary-button"
-            disabled={saving}
-            onClick={() => void submit()}
-          >
-            <Target size={14} aria-hidden="true" /> {t('chat.goal.save')}
-          </button>
+          </Button>
+          <Button disabled={saving} onClick={() => void submit()}>
+            <Target /> {t('chat.goal.save')}
+          </Button>
         </>
       }
     >
-      <div className="form-stack">
-        <label>
-          <span>{t('chat.goal.objective')}</span>
-          <input
-            className="text-input"
+      <div className="flex flex-col gap-6">
+        <Field label={t('chat.goal.objective')}>
+          <Input
             value={objective}
             onChange={(event) => setObjective(event.target.value)}
             placeholder={t('chat.goal.objective')}
           />
-        </label>
-        <label>
-          <span>{t('chat.goal.criteria')}</span>
-          <textarea
-            className="text-input"
+        </Field>
+        <Field label={t('chat.goal.criteria')}>
+          <Textarea
             rows={3}
             value={criteria}
             onChange={(event) => setCriteria(event.target.value)}
             placeholder={t('chat.goal.criteria')}
           />
-        </label>
-        <label>
-          <span>{t('chat.goal.tasks')}</span>
-          <textarea
-            className="text-input"
+        </Field>
+        <Field label={t('chat.goal.tasks')} hint={t('chat.goal.taskPlaceholder')}>
+          <Textarea
             rows={6}
             value={tasks}
             onChange={(event) => setTasks(event.target.value)}
             placeholder={t('chat.goal.taskPlaceholder')}
+            className="font-mono text-[13px]"
           />
-          <small className="muted">{t('chat.goal.taskPlaceholder')}</small>
-        </label>
+        </Field>
         {error && (
           <p className="form-error" role="alert">
             {error}

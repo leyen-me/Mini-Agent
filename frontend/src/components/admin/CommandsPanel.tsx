@@ -4,6 +4,10 @@ import { api } from '../../api/client';
 import type { AgentInfo, CommandInfo } from '../../api/types';
 import type { ToastFn } from './useAdmin';
 import { runAction } from './useAdmin';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { SimpleSelect } from '@/components/common/SimpleSelect';
 
 interface Props {
   agents: AgentInfo[];
@@ -102,28 +106,28 @@ export function CommandsPanel({ agents, onToast }: Props) {
                 <pre className="admin-detail">{command.promptTemplate}</pre>
               </div>
               <div className="admin-actions">
-                <button
+                <Button
                   type="button"
-                  className="secondary-button"
+                  variant="outline" size="sm"
                   onClick={() => {
                     setPreviewArgs('');
                     void runPreview(command);
                   }}
                 >
                   <Play size={13} /> 预览
-                </button>
+                </Button>
                 {!command.pluginId && (
                   <>
-                    <button
+                    <Button
                       type="button"
-                      className="secondary-button"
+                      variant="outline" size="sm"
                       onClick={() => startEdit(command)}
                     >
                       编辑
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
-                      className="icon-button danger"
+                      variant="ghost" size="icon-sm" className="text-muted-foreground hover:bg-danger-soft hover:text-destructive"
                       aria-label="删除命令"
                       onClick={() =>
                         void runAction(
@@ -136,7 +140,7 @@ export function CommandsPanel({ agents, onToast }: Props) {
                       }
                     >
                       <Trash2 size={14} />
-                    </button>
+                    </Button>
                   </>
                 )}
               </div>
@@ -144,7 +148,7 @@ export function CommandsPanel({ agents, onToast }: Props) {
                 <div className="command-inline-preview">
                   <label className="field">
                     <span>参数</span>
-                    <input
+                    <Input
                       value={previewArgs}
                       onChange={(event) => setPreviewArgs(event.target.value)}
                       onKeyDown={(event) =>
@@ -165,7 +169,7 @@ export function CommandsPanel({ agents, onToast }: Props) {
         <div className="form-grid">
           <label className="field">
             <span>名称</span>
-            <input
+            <Input
               value={form.name}
               onChange={(event) =>
                 setForm({ ...form, name: event.target.value })
@@ -175,23 +179,18 @@ export function CommandsPanel({ agents, onToast }: Props) {
           </label>
           <label className="field">
             <span>指定 Agent</span>
-            <select
+            <SimpleSelect
               value={form.agentId}
-              onChange={(event) =>
-                setForm({ ...form, agentId: event.target.value })
-              }
-            >
-              <option value="">不改变</option>
-              {agents.map((agent) => (
-                <option key={agent.id} value={agent.id}>
-                  {agent.name}
-                </option>
-              ))}
-            </select>
+              onValueChange={(value) => setForm({ ...form, agentId: value })}
+              options={[
+                { value: '', label: '不改变' },
+                ...agents.map((agent) => ({ value: agent.id, label: agent.name })),
+              ]}
+            />
           </label>
           <label className="field">
             <span>指定模型</span>
-            <input
+            <Input
               value={form.model}
               onChange={(event) =>
                 setForm({ ...form, model: event.target.value })
@@ -201,7 +200,7 @@ export function CommandsPanel({ agents, onToast }: Props) {
           </label>
           <label className="field">
             <span>推理等级</span>
-            <input
+            <Input
               value={form.reasoningLevel}
               onChange={(event) =>
                 setForm({ ...form, reasoningLevel: event.target.value })
@@ -211,7 +210,7 @@ export function CommandsPanel({ agents, onToast }: Props) {
           </label>
           <label className="field wide">
             <span>描述</span>
-            <input
+            <Input
               value={form.description}
               onChange={(event) =>
                 setForm({ ...form, description: event.target.value })
@@ -220,7 +219,7 @@ export function CommandsPanel({ agents, onToast }: Props) {
           </label>
           <label className="field wide">
             <span>Prompt 模板</span>
-            <textarea
+            <Textarea
               rows={6}
               value={form.promptTemplate}
               onChange={(event) =>
@@ -231,24 +230,24 @@ export function CommandsPanel({ agents, onToast }: Props) {
           </label>
         </div>
         <div className="admin-actions">
-          <button
+          <Button
             type="button"
-            className="primary-button"
+            size="sm"
             onClick={() => void save()}
           >
             <Plus size={14} /> {editing ? '保存' : '创建'}
-          </button>
+          </Button>
           {editing && (
-            <button
+            <Button
               type="button"
-              className="secondary-button"
+              variant="outline" size="sm"
               onClick={() => {
                 setEditing(null);
                 setForm(EMPTY);
               }}
             >
               取消
-            </button>
+            </Button>
           )}
         </div>
       </section>

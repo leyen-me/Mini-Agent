@@ -6,30 +6,40 @@ export function Attachments({ items }: { items?: Attachment[] }) {
   const { t } = useUi();
   if (!items?.length) return null;
   return (
-    <div className="message-attachments" aria-label={t('chat.attachments')}>
+    <div
+      className="message-attachments mt-2 flex flex-wrap gap-2"
+      aria-label={t('chat.attachments')}
+    >
       {items.map((item) =>
         item.kind === 'image' ? (
           <a
             key={item.id}
-            className="message-image"
+            className="block border border-border bg-muted"
             href={item.url}
             target="_blank"
             rel="noreferrer"
             title={item.filename}
           >
-            <img src={item.url} alt={item.filename} loading="lazy" />
+            <img
+              src={item.url}
+              alt={item.filename}
+              loading="lazy"
+              className="block max-h-64 max-w-[min(320px,70vw)] object-contain"
+            />
           </a>
         ) : (
           <a
             key={item.id}
-            className="message-file"
+            className="inline-flex items-center gap-2 border border-border bg-background px-2.5 py-1.5 text-[12.5px] text-foreground transition-colors hover:border-border-strong"
             href={item.url}
             target="_blank"
             rel="noreferrer"
           >
-            <FileText size={15} aria-hidden="true" />
-            <span>{item.filename}</span>
-            <span className="message-file-kind">{item.kind.toUpperCase()}</span>
+            <FileText className="size-3.5 text-muted-foreground" aria-hidden="true" />
+            <span className="max-w-56 truncate">{item.filename}</span>
+            <span className="font-mono text-[10px] text-muted-foreground">
+              {item.kind.toUpperCase()}
+            </span>
           </a>
         ),
       )}

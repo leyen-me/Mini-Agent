@@ -1,19 +1,29 @@
 import {
   Archive,
+  CornerDownLeft,
   Download,
+  MessageSquare,
   Moon,
+  Play,
   Plus,
-  Search,
   Settings,
   Square,
   TerminalSquare,
-  Play,
-  MessageSquare,
-  Target,
+  type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo } from 'react';
 import type { Session } from '../api/types';
 import { useUi } from '../state/UiContext';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { Kbd } from '@/components/ui/kbd';
 
 interface Props {
   open: boolean;
@@ -33,8 +43,7 @@ interface Props {
 interface Item {
   id: string;
   label: string;
-  group: string;
-  icon: typeof Search;
+  icon: LucideIcon;
   run: () => void;
 }
 
@@ -53,124 +62,114 @@ export function CommandPalette({
   onFocusComposer,
 }: Props) {
   const { t } = useUi();
-  const [query, setQuery] = useState('');
-  const [index, setIndex] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (open) {
-      setQuery('');
-      setIndex(0);
-      window.setTimeout(() => inputRef.current?.focus(), 30);
-    }
-  }, [open]);
-
-  const actions: Item[] = useMemo(
+  const groups = useMemo<Array<[string, Item[]]>>(
     () => [
-      { id: 'new', label: t('palette.newSession'), group: t('palette.actions'), icon: Plus, run: onNewSession },
-      { id: 'settings', label: t('palette.openSettings'), group: t('palette.actions'), icon: Settings, run: onOpenSettings },
-      { id: 'theme', label: t('palette.toggleTheme'), group: t('palette.actions'), icon: Moon, run: onToggleTheme },
-      { id: 'stop', label: t('palette.stop'), group: t('palette.actions'), icon: Square, run: onStop },
-      { id: 'resume', label: t('palette.resume'), group: t('palette.actions'), icon: Play, run: onResume },
-      { id: 'compact', label: t('palette.compact'), group: t('palette.actions'), icon: Archive, run: onCompact },
-      { id: 'export', label: t('palette.exportJson'), group: t('palette.actions'), icon: Download, run: onExport },
-      { id: 'focus', label: t('palette.focusComposer'), group: t('palette.navigation'), icon: TerminalSquare, run: onFocusComposer },
+      [
+        t('palette.actions'),
+        [
+          { id: 'new', label: t('palette.newSession'), icon: Plus, run: onNewSession },
+          { id: 'settings', label: t('palette.openSettings'), icon: Settings, run: onOpenSettings },
+          { id: 'theme', label: t('palette.toggleTheme'), icon: Moon, run: onToggleTheme },
+          { id: 'stop', label: t('palette.stop'), icon: Square, run: onStop },
+          { id: 'resume', label: t('palette.resume'), icon: Play, run: onResume },
+          { id: 'compact', label: t('palette.compact'), icon: Archive, run: onCompact },
+          { id: 'export', label: t('palette.exportJson'), icon: Download, run: onExport },
+        ],
+      ],
+      [
+        t('palette.navigation'),
+        [
+          {
+            id: 'focus',
+            label: t('palette.focusComposer'),
+            icon: TerminalSquare,
+            run: onFocusComposer,
+          },
+        ],
+      ],
+      [
+        t('palette.sessions'),
+        sessions.slice(0, 30).map((session) => ({
+          id: `session-${session.id}`,
+          label: session.title || session.id,
+          icon: MessageSquare,
+          run: () => onSelectSession(session.id),
+        })),
+      ],
     ],
-    [t, onNewSession, onOpenSettings, onToggleTheme, onStop, onResume, onCompact, onExport, onFocusComposer],
+    [
+      t,
+      sessions,
+      onNewSession,
+      onOpenSettings,
+      onToggleTheme,
+      onStop,
+      onResume,
+      onCompact,
+      onExport,
+      onFocusComposer,
+      onSelectSession,
+    ],
   );
 
-  const items = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    const actionItems = actions.filter(
-      (item) => !normalized || item.label.toLowerCase().includes(normalized) || item.id.includes(normalized),
-    );
-    const sessionItems: Item[] = sessions
-      .filter((session) => !normalized || session.title.toLowerCase().includes(normalized))
-      .slice(0, 8)
-      .map((session) => ({
-        id: `session-${session.id}`,
-        label: session.title || session.id,
-        group: t('palette.sessions'),
-        icon: MessageSquare,
-        run: () => onSelectSession(session.id),
-      }));
-    return [...actionItems, ...sessionItems];
-  }, [actions, query, sessions, t, onSelectSession]);
-
-  useEffect(() => {
-    setIndex(0);
-  }, [query]);
-
-  if (!open) return null;
-  const grouped = items.reduce<Record<string, Item[]>>((result, item) => {
-    (result[item.group] ??= []).push(item);
-    return result;
-  }, {});
-  const execute = (item: Item | undefined) => {
-    if (!item) return;
-    item.run();
-    onClose();
-  };
   return (
-    <div className="palette-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="palette" role="dialog" aria-modal="true" aria-label={t('app.commandPalette')}>
-        <div className="palette-search">
-          <Search size={17} aria-hidden="true" />
-          <input
-            ref={inputRef}
-            value={query}
-            placeholder={t('palette.placeholder')}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'ArrowDown') {
-                event.preventDefault();
-                setIndex((value) => Math.min(items.length - 1, value + 1));
-              } else if (event.key === 'ArrowUp') {
-                event.preventDefault();
-                setIndex((value) => Math.max(0, value - 1));
-              } else if (event.key === 'Enter') {
-                event.preventDefault();
-                execute(items[index]);
-              } else if (event.key === 'Escape') {
-                onClose();
-              }
-            }}
-            aria-label={t('palette.placeholder')}
-          />
-          <kbd>Esc</kbd>
-        </div>
-        <div className="palette-list" role="listbox">
-          {items.length === 0 && <div className="palette-empty">{t('palette.noResults')}</div>}
-          {Object.entries(grouped).map(([group, groupItems]) => (
-            <div key={group}>
-              <div className="palette-group">{group}</div>
-              {groupItems.map((item) => {
-                const Icon = item.icon;
-                const active = items.indexOf(item) === index;
-                return (
-                  <button
-                    type="button"
-                    key={item.id}
-                    role="option"
-                    aria-selected={active}
-                    className={`palette-item ${active ? 'active' : ''}`}
-                    onMouseEnter={() => setIndex(items.indexOf(item))}
-                    onClick={() => execute(item)}
-                  >
-                    <Icon size={15} aria-hidden="true" />
-                    <span>{item.label}</span>
-                    {active && <span className="palette-enter">↵</span>}
-                  </button>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-        <footer className="palette-footer">
-          <span>{t('palette.hint')}</span>
-          <span><Target size={12} aria-hidden="true" /> Mini Agent</span>
-        </footer>
-      </div>
-    </div>
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent
+        showCloseButton={false}
+        aria-describedby={undefined}
+        aria-label={t('app.commandPalette')}
+        className="top-[14vh] translate-y-0 gap-0 overflow-hidden border-border p-0 sm:max-w-[640px]"
+      >
+        <DialogTitle className="sr-only">{t('app.commandPalette')}</DialogTitle>
+        <Command className="bg-background **:data-[slot=command-input-wrapper]:h-14 **:data-[slot=command-input-wrapper]:px-4 **:data-[slot=command-input-wrapper]:pr-16">
+          <div className="relative">
+            <CommandInput
+              placeholder={t('palette.placeholder')}
+              aria-label={t('palette.placeholder')}
+              className="h-14 text-[15px]"
+            />
+            <Kbd className="absolute top-1/2 right-4 -translate-y-1/2">Esc</Kbd>
+          </div>
+          <CommandList className="max-h-[min(52vh,440px)] py-2">
+            <CommandEmpty className="py-10 text-center text-[13px] text-muted-foreground">
+              {t('palette.noResults')}
+            </CommandEmpty>
+            {groups.map(([group, items]) =>
+              items.length ? (
+                <CommandGroup
+                  key={group}
+                  heading={group}
+                  className="px-2 [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:pt-3 [&_[cmdk-group-heading]]:pb-2 [&_[cmdk-group-heading]]:font-mono [&_[cmdk-group-heading]]:text-[10.5px] [&_[cmdk-group-heading]]:tracking-[0.12em] [&_[cmdk-group-heading]]:uppercase"
+                >
+                  {items.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <CommandItem
+                        key={item.id}
+                        value={`${item.label} ${item.id}`}
+                        onSelect={() => {
+                          item.run();
+                          onClose();
+                        }}
+                        className="group h-10 gap-3 px-3 text-[13.5px] data-[selected=true]:bg-accent"
+                      >
+                        <Icon className="size-4 text-muted-foreground group-data-[selected=true]:text-foreground" />
+                        <span className="truncate">{item.label}</span>
+                        <CornerDownLeft className="ml-auto size-3.5 opacity-0 group-data-[selected=true]:opacity-60" />
+                      </CommandItem>
+                    );
+                  })}
+                </CommandGroup>
+              ) : null,
+            )}
+          </CommandList>
+          <footer className="flex items-center justify-between gap-3 border-t border-border bg-muted/60 px-4 py-2.5 text-[11.5px] text-muted-foreground">
+            <span>{t('palette.hint')}</span>
+            <span className="font-mono tracking-wider uppercase">{t('app.name')}</span>
+          </footer>
+        </Command>
+      </DialogContent>
+    </Dialog>
   );
 }

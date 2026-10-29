@@ -4,6 +4,10 @@ import { api } from '../../api/client';
 import type { PublicProvider } from '../../api/types';
 import type { ToastFn } from './useAdmin';
 import { runAction } from './useAdmin';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { SimpleSelect } from '@/components/common/SimpleSelect';
 
 interface Props {
   onToast: ToastFn;
@@ -131,9 +135,9 @@ export function ProvidersPanel({ onToast, onReload }: Props) {
                   <span className="admin-tag">{provider.protocol}</span>
                 </div>
                 <div className="admin-actions">
-                  <button
+                  <Button
                     type="button"
-                    className="secondary-button"
+                    variant="outline" size="sm"
                     onClick={() =>
                       void runAction(
                         () => api.providers.test(provider.id),
@@ -143,10 +147,10 @@ export function ProvidersPanel({ onToast, onReload }: Props) {
                     }
                   >
                     <RefreshCw size={13} /> 测试
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
-                    className="secondary-button"
+                    variant="outline" size="sm"
                     onClick={() =>
                       void runAction(
                         () => api.providers.fetchModels(provider.id, true),
@@ -161,10 +165,10 @@ export function ProvidersPanel({ onToast, onReload }: Props) {
                     }
                   >
                     拉取模型
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
-                    className="secondary-button"
+                    variant="outline" size="sm"
                     onClick={() =>
                       void runAction(
                         () =>
@@ -182,11 +186,11 @@ export function ProvidersPanel({ onToast, onReload }: Props) {
                     }
                   >
                     {provider.enabled ? '停用' : '启用'}
-                  </button>
+                  </Button>
                   {!provider.supports_balance && (
-                    <button
+                    <Button
                       type="button"
-                      className="secondary-button"
+                      variant="outline" size="sm"
                       onClick={() =>
                         void runAction(
                           () =>
@@ -204,12 +208,12 @@ export function ProvidersPanel({ onToast, onReload }: Props) {
                       }
                     >
                       启用余额
-                    </button>
+                    </Button>
                   )}
                   {provider.supports_balance && (
-                    <button
+                    <Button
                       type="button"
-                      className="secondary-button"
+                      variant="outline" size="sm"
                       onClick={() =>
                         void runAction(async () => {
                           const balance = await api.providers.balance(
@@ -223,11 +227,11 @@ export function ProvidersPanel({ onToast, onReload }: Props) {
                       }
                     >
                       余额
-                    </button>
+                    </Button>
                   )}
-                  <button
+                  <Button
                     type="button"
-                    className="icon-button danger"
+                    variant="ghost" size="icon-sm" className="text-muted-foreground hover:bg-danger-soft hover:text-destructive"
                     aria-label="删除服务商"
                     onClick={() =>
                       void runAction(
@@ -243,7 +247,7 @@ export function ProvidersPanel({ onToast, onReload }: Props) {
                     }
                   >
                     <Trash2 size={14} />
-                  </button>
+                  </Button>
                 </div>
               </header>
               <p className="muted small">{provider.base_url}</p>
@@ -297,7 +301,7 @@ export function ProvidersPanel({ onToast, onReload }: Props) {
               </div>
               <label className="field inline">
                 <span>API Key</span>
-                <input
+                <Input
                   type="password"
                   placeholder="留空则不修改"
                   onBlur={(event) => {
@@ -323,7 +327,7 @@ export function ProvidersPanel({ onToast, onReload }: Props) {
         <div className="form-grid">
           <label className="field">
             <span>ID</span>
-            <input
+            <Input
               value={form.id}
               onChange={(event) => setForm({ ...form, id: event.target.value })}
               placeholder="deepseek"
@@ -331,7 +335,7 @@ export function ProvidersPanel({ onToast, onReload }: Props) {
           </label>
           <label className="field">
             <span>名称</span>
-            <input
+            <Input
               value={form.name}
               onChange={(event) =>
                 setForm({ ...form, name: event.target.value })
@@ -340,21 +344,20 @@ export function ProvidersPanel({ onToast, onReload }: Props) {
           </label>
           <label className="field">
             <span>协议</span>
-            <select
+            <SimpleSelect
               value={form.protocol}
-              onChange={(event) =>
-                setForm({ ...form, protocol: event.target.value })
-              }
-            >
-              <option value="openai-chat">OpenAI Chat</option>
-              <option value="openai-responses">OpenAI Responses</option>
-              <option value="anthropic">Anthropic Messages</option>
-              <option value="mock">Mock</option>
-            </select>
+              onValueChange={(value) => setForm({ ...form, protocol: value })}
+              options={[
+                { value: 'openai-chat', label: 'OpenAI Chat' },
+                { value: 'openai-responses', label: 'OpenAI Responses' },
+                { value: 'anthropic', label: 'Anthropic Messages' },
+                { value: 'mock', label: 'Mock' },
+              ]}
+            />
           </label>
           <label className="field wide">
             <span>Base URL</span>
-            <input
+            <Input
               value={form.baseUrl}
               onChange={(event) =>
                 setForm({ ...form, baseUrl: event.target.value })
@@ -364,7 +367,7 @@ export function ProvidersPanel({ onToast, onReload }: Props) {
           </label>
           <label className="field">
             <span>API Key</span>
-            <input
+            <Input
               type="password"
               value={form.apiKey}
               onChange={(event) =>
@@ -374,7 +377,7 @@ export function ProvidersPanel({ onToast, onReload }: Props) {
           </label>
           <label className="field">
             <span>模型 ID（逗号分隔）</span>
-            <input
+            <Input
               value={form.models}
               onChange={(event) =>
                 setForm({ ...form, models: event.target.value })
@@ -382,14 +385,14 @@ export function ProvidersPanel({ onToast, onReload }: Props) {
             />
           </label>
         </div>
-        <button
+        <Button
           type="button"
-          className="primary-button"
+          size="sm"
           disabled={busy || !form.id.trim()}
           onClick={() => void create()}
         >
           <Plus size={14} /> 创建
-        </button>
+        </Button>
       </section>
 
       <section className="admin-section">
@@ -397,23 +400,22 @@ export function ProvidersPanel({ onToast, onReload }: Props) {
         <div className="form-grid">
           <label className="field">
             <span>服务商</span>
-            <select
+            <SimpleSelect
               value={model.provider}
-              onChange={(event) =>
-                setModel({ ...model, provider: event.target.value })
-              }
-            >
-              <option value="">选择</option>
-              {providers.map((provider) => (
-                <option key={provider.id} value={provider.id}>
-                  {provider.name}
-                </option>
-              ))}
-            </select>
+              placeholder="选择"
+              onValueChange={(value) => setModel({ ...model, provider: value })}
+              options={[
+                { value: '', label: '选择' },
+                ...providers.map((provider) => ({
+                  value: provider.id,
+                  label: provider.name,
+                })),
+              ]}
+            />
           </label>
           <label className="field">
             <span>模型 ID</span>
-            <input
+            <Input
               value={model.id}
               onChange={(event) => {
                 const id = event.target.value;
@@ -430,7 +432,7 @@ export function ProvidersPanel({ onToast, onReload }: Props) {
           </label>
           <label className="field">
             <span>显示名</span>
-            <input
+            <Input
               value={model.name}
               onChange={(event) =>
                 setModel({ ...model, name: event.target.value })
@@ -439,7 +441,7 @@ export function ProvidersPanel({ onToast, onReload }: Props) {
           </label>
           <label className="field">
             <span>上下文</span>
-            <input
+            <Input
               value={model.context}
               onChange={(event) =>
                 setModel({ ...model, context: event.target.value })
@@ -448,7 +450,7 @@ export function ProvidersPanel({ onToast, onReload }: Props) {
           </label>
           <label className="field">
             <span>最大输出</span>
-            <input
+            <Input
               value={model.maxOutput}
               onChange={(event) =>
                 setModel({ ...model, maxOutput: event.target.value })
@@ -457,7 +459,7 @@ export function ProvidersPanel({ onToast, onReload }: Props) {
           </label>
           <label className="field">
             <span>能力（逗号分隔）</span>
-            <input
+            <Input
               value={model.capabilities}
               onChange={(event) =>
                 setModel({ ...model, capabilities: event.target.value })
@@ -467,7 +469,7 @@ export function ProvidersPanel({ onToast, onReload }: Props) {
           </label>
           <label className="field">
             <span>推理级别（逗号分隔）</span>
-            <input
+            <Input
               value={model.reasoningLevels}
               onChange={(event) =>
                 setModel({ ...model, reasoningLevels: event.target.value })
@@ -476,23 +478,22 @@ export function ProvidersPanel({ onToast, onReload }: Props) {
             />
           </label>
           <label className="checkbox-field">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={model.structuredOutput}
-              onChange={(event) =>
-                setModel({ ...model, structuredOutput: event.target.checked })
+              onCheckedChange={(checked) =>
+                setModel({ ...model, structuredOutput: checked === true })
               }
             />
             <span>支持结构化输出（JSON Schema）</span>
           </label>
         </div>
-        <button
+        <Button
           type="button"
-          className="secondary-button"
+          variant="outline" size="sm"
           onClick={() => void addModel()}
         >
           <Plus size={14} /> 保存模型
-        </button>
+        </Button>
       </section>
     </div>
   );

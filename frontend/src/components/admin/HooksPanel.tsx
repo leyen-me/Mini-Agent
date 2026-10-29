@@ -4,6 +4,10 @@ import { api } from '../../api/client';
 import type { HookInfo } from '../../api/types';
 import type { ToastFn } from './useAdmin';
 import { runAction } from './useAdmin';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { SimpleSelect } from '@/components/common/SimpleSelect';
 
 const EVENTS = [
   'session.start',
@@ -63,9 +67,9 @@ export function HooksPanel({ onToast }: { onToast: ToastFn }) {
                 <pre className="admin-detail">{hook.command}</pre>
               </div>
               <div className="admin-actions">
-                <button
+                <Button
                   type="button"
-                  className="secondary-button"
+                  variant="outline" size="sm"
                   onClick={() =>
                     void runAction(
                       () =>
@@ -77,10 +81,10 @@ export function HooksPanel({ onToast }: { onToast: ToastFn }) {
                   }
                 >
                   {hook.enabled ? '停用' : '启用'}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className="icon-button danger"
+                  variant="ghost" size="icon-sm" className="text-muted-foreground hover:bg-danger-soft hover:text-destructive"
                   aria-label="删除 Hook"
                   onClick={() =>
                     void runAction(
@@ -93,7 +97,7 @@ export function HooksPanel({ onToast }: { onToast: ToastFn }) {
                   }
                 >
                   <Trash2 size={14} />
-                </button>
+                </Button>
               </div>
             </div>
           ))}
@@ -105,7 +109,7 @@ export function HooksPanel({ onToast }: { onToast: ToastFn }) {
         <div className="form-grid">
           <label className="field">
             <span>名称</span>
-            <input
+            <Input
               value={form.name}
               onChange={(event) =>
                 setForm({ ...form, name: event.target.value })
@@ -114,22 +118,18 @@ export function HooksPanel({ onToast }: { onToast: ToastFn }) {
           </label>
           <label className="field">
             <span>事件</span>
-            <select
+            <SimpleSelect
               value={form.event}
-              onChange={(event) =>
-                setForm({ ...form, event: event.target.value })
-              }
-            >
-              {EVENTS.map((event) => (
-                <option key={event} value={event}>
-                  {event}
-                </option>
-              ))}
-            </select>
+              onValueChange={(value) => setForm({ ...form, event: value })}
+              options={EVENTS.map((event) => ({
+                value: event,
+                label: <span className="font-mono text-[12.5px]">{event}</span>,
+              }))}
+            />
           </label>
           <label className="field">
             <span>超时（秒）</span>
-            <input
+            <Input
               value={form.timeoutSeconds}
               onChange={(event) =>
                 setForm({ ...form, timeoutSeconds: event.target.value })
@@ -138,7 +138,7 @@ export function HooksPanel({ onToast }: { onToast: ToastFn }) {
           </label>
           <label className="field wide">
             <span>命令</span>
-            <textarea
+            <Textarea
               rows={3}
               value={form.command}
               onChange={(event) =>
@@ -148,13 +148,13 @@ export function HooksPanel({ onToast }: { onToast: ToastFn }) {
             />
           </label>
         </div>
-        <button
+        <Button
           type="button"
-          className="primary-button"
+          size="sm"
           onClick={() => void create()}
         >
           <Plus size={14} /> 创建
-        </button>
+        </Button>
       </section>
     </div>
   );

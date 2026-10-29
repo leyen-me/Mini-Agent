@@ -11,6 +11,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -36,6 +37,7 @@ const AdminDialog = lazy(() =>
   })),
 );
 import { Composer } from './components/Composer';
+import { Inspector } from './components/Inspector';
 import { GoalDialog } from './components/GoalDialog';
 import { Modal } from './components/Modal';
 import { SettingsDialog } from './components/SettingsDialog';
@@ -46,7 +48,14 @@ import { newClientId } from './lib/ids';
 import type { Language } from './lib/i18n';
 import type { ThemeSetting } from './lib/theme';
 import { applyEvent } from './lib/events';
+import { InspectorContext, type InspectorTab } from './state/InspectorContext';
 import { useUi } from './state/UiContext';
+import { Button } from '@/components/ui/button';
+import { Kbd } from '@/components/ui/kbd';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 
 interface Toast {
   id: number;
@@ -109,6 +118,8 @@ function loadBoolean(key: string, fallback: boolean): boolean {
 export function App() {
   const { t, language, setLanguage, themeSetting, setTheme } = useUi();
   const isMobile = useMediaQuery('(max-width: 900px)');
+  // The inspector docks as a third column only when there is room for it.
+  const inspectorDocked = useMediaQuery('(min-width: 1280px)');
   const [boot, setBoot] = useState<BootstrapData | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -130,6 +141,14 @@ export function App() {
     loadNumber('mini-agent-sidebar-width', 284),
   );
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(() =>
+    loadBoolean('mini-agent-inspector-open', true),
+  );
+  const [inspectorSheetOpen, setInspectorSheetOpen] = useState(false);
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>('activity');
+  const [selectedToolCallId, setSelectedToolCallId] = useState<string | null>(
+    null,
+  );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
   const [adminOpen, setAdminOpen] = useState(false);
@@ -450,6 +469,35 @@ export function App() {
   useEffect(() => {
     localStorage.setItem('mini-agent-sidebar-width', String(sidebarWidth));
   }, [sidebarWidth]);
+  useEffect(() => {
+    localStorage.setItem('mini-agent-inspector-open', String(inspectorOpen));
+  }, [inspectorOpen]);
+  useEffect(() => {
+    setSelectedToolCallId(null);
+  }, [selectedId]);
+
+  const openInspector = useCallback(
+    (tab?: InspectorTab) => {
+      if (tab) setInspectorTab(tab);
+      if (inspectorDocked) setInspectorOpen(true);
+      else setInspectorSheetOpen(true);
+    },
+    [inspectorDocked],
+  );
+  const toggleInspector = useCallback(() => {
+    if (inspectorDocked) setInspectorOpen((value) => !value);
+    else setInspectorSheetOpen((value) => !value);
+  }, [inspectorDocked]);
+  const inspectorContext = useMemo(
+    () => ({
+      selectedToolCallId,
+      focusToolCall: (id: string) => {
+        setSelectedToolCallId(id);
+        openInspector('activity');
+      },
+    }),
+    [selectedToolCallId, openInspector],
+  );
 
   const selectSession = useCallback(
     (id: string) => {
@@ -496,11 +544,10 @@ export function App() {
       setSessions((current) => [created.session, ...current]);
       setSelectedId(created.session.id);
       setMobileOpen(false);
-      pushToast(t('toast.sessionCreated'), 'success');
     } catch (error) {
       pushToast(errorMessage(error), 'error');
     }
-  }, [boot, activeWorkspaceId, pushToast, t]);
+  }, [boot, activeWorkspaceId, pushToast]);
 
   const handleSearch = useCallback(
     async (query: string) => {
@@ -1029,25 +1076,23 @@ export function App() {
   const uiConfig = boot?.config;
   if (!uiConfig) {
     return (
-      <div className="boot-screen">
+      <div className="boot-screen grid h-dvh place-items-center bg-background p-6">
         {bootError ? (
-          <div className="centered-error">
-            <AlertTriangle size={28} aria-hidden="true" />
-            <h1>{t('app.error')}</h1>
-            <p className="muted">{bootError}</p>
-            <button
-              type="button"
-              className="primary-button"
-              onClick={() => void bootstrap()}
-            >
-              {t('app.retry')}
-            </button>
+          <div className="flex max-w-md flex-col items-start gap-4">
+            <span className="eyebrow flex items-center gap-2 text-destructive">
+              <AlertTriangle className="size-3.5" aria-hidden="true" />
+              {t('app.error')}
+            </span>
+            <p className="text-[15px] leading-relaxed text-muted-foreground">{bootError}</p>
+            <Button onClick={() => void bootstrap()}>{t('app.retry')}</Button>
           </div>
         ) : (
-          <div className="loading-screen" role="status" aria-live="polite">
-            <div className="boot-mark">M</div>
-            <div className="skeleton wide" />
-            <div className="skeleton" />
+          <div className="flex w-[min(360px,90%)] flex-col gap-4" role="status" aria-live="polite">
+            <span className="grid size-8 place-items-center bg-foreground font-mono text-sm font-semibold text-background animate-pulse">
+              M
+            </span>
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-3 w-2/3" />
             <span className="sr-only">{t('app.loading')}</span>
           </div>
         )}
@@ -1057,24 +1102,31 @@ export function App() {
 
   if (!currentSession && !uiConfig.model_configured) {
     return (
-      <div className="setup-screen">
-        <div className="setup-card">
-          <div className="brand-mark large" aria-hidden="true">
+      <div className="setup-screen hairline-grid grid h-dvh place-items-center bg-background p-6">
+        <div className="setup-card corner-ticks w-full max-w-[520px] border border-border bg-background p-10 animate-rise">
+          <span className="tick-b" aria-hidden="true" />
+          <span className="grid size-8 place-items-center bg-foreground font-mono text-sm font-semibold text-background">
             M
-          </div>
-          <h1>{t('chat.noModel')}</h1>
-          <p className="muted">{t('chat.noModelHint')}</p>
-          <button
-            type="button"
-            className="primary-button"
+          </span>
+          <h1 className="mt-8 text-[30px] leading-tight font-semibold tracking-[-0.03em]">
+            {t('chat.noModel')}
+          </h1>
+          <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
+            {t('chat.noModelHint')}
+          </p>
+          <Button
+            size="lg"
+            className="primary-button mt-8"
             onClick={() => {
               setSettingsTab('models');
               setSettingsOpen(true);
             }}
           >
-            <Settings size={15} aria-hidden="true" /> {t('chat.noModelCta')}
-          </button>
-          <p className="muted small">{t('settings.about.guide')}</p>
+            <Settings /> {t('chat.noModelCta')}
+          </Button>
+          <p className="mt-6 border-t border-border pt-4 text-[12.5px] text-muted-foreground">
+            {t('settings.about.guide')}
+          </p>
         </div>
         <SettingsDialog
           open={settingsOpen}
@@ -1109,22 +1161,25 @@ export function App() {
 
   if (!currentSession) {
     return (
-      <div className="setup-screen">
-        <div className="setup-card">
-          <div className="brand-mark large" aria-hidden="true">
+      <div className="setup-screen hairline-grid grid h-dvh place-items-center bg-background p-6">
+        <div className="setup-card corner-ticks w-full max-w-[520px] border border-border bg-background p-10 animate-rise">
+          <span className="tick-b" aria-hidden="true" />
+          <span className="grid size-8 place-items-center bg-foreground font-mono text-sm font-semibold text-background">
             M
-          </div>
-          <h1>{t('app.noSessions')}</h1>
-          <p className="muted">
+          </span>
+          <h1 className="mt-8 text-[30px] leading-tight font-semibold tracking-[-0.03em]">
+            {t('app.noSessions')}
+          </h1>
+          <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
             {loading ? t('app.loading') : t('app.noSessionsHint')}
           </p>
-          <button
-            type="button"
-            className="primary-button"
+          <Button
+            size="lg"
+            className="primary-button mt-8"
             onClick={() => void createSession()}
           >
-            <Plus size={15} aria-hidden="true" /> {t('app.newSession')}
-          </button>
+            <Plus /> {t('app.newSession')}
+          </Button>
         </div>
         <Toasts
           toasts={toasts}
@@ -1135,6 +1190,22 @@ export function App() {
       </div>
     );
   }
+
+  const renderInspector = (onClose: () => void) => (
+    <Inspector
+      snapshot={snapshot}
+      workspaceId={currentWorkspace?.id ?? activeWorkspaceId}
+      tab={inspectorTab}
+      onTabChange={setInspectorTab}
+      selectedToolCallId={selectedToolCallId}
+      onSelectToolCall={setSelectedToolCallId}
+      onClose={onClose}
+      onReferenceFile={(path) => setPendingReference({ path, nonce: Date.now() })}
+      onOpenGoal={() => setGoalOpen(true)}
+      onCompact={() => void compact()}
+      onSelectSession={selectSession}
+    />
+  );
 
   const composer = (
     <Composer
@@ -1168,10 +1239,22 @@ export function App() {
   );
 
   return (
+    <InspectorContext.Provider value={inspectorContext}>
     <div
-      className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}
+      className={cn(
+        'app-shell flex h-dvh min-h-0 bg-background',
+        mobileOpen && 'mobile-open',
+      )}
     >
-      <div className="sidebar-frame" aria-hidden={isMobile && !mobileOpen}>
+      <div
+        className={cn(
+          'sidebar-frame relative z-20 h-full min-h-0 shrink-0',
+          isMobile &&
+            'fixed inset-y-0 left-0 w-auto -translate-x-full transition-transform duration-300 ease-out',
+          isMobile && mobileOpen && 'translate-x-0 shadow-2xl',
+        )}
+        aria-hidden={isMobile && !mobileOpen}
+      >
         <Sidebar
           sessions={visibleSessions}
           selectedId={selectedId}
@@ -1210,15 +1293,12 @@ export function App() {
           onArchive={(session) => void archiveSession(session)}
           onToggleCollapse={() => setSidebarCollapsed((value) => !value)}
           onWidthChange={setSidebarWidth}
-          onReferenceFile={(path) =>
-            setPendingReference({ path, nonce: Date.now() })
-          }
         />
       </div>
       {isMobile && mobileOpen && (
         <button
           type="button"
-          className="sidebar-backdrop"
+          className="fixed inset-0 z-[19] bg-black/40 backdrop-blur-[2px] animate-in fade-in-0"
           aria-label={t('app.close')}
           onClick={() => setMobileOpen(false)}
         />
@@ -1239,6 +1319,9 @@ export function App() {
         composer={composer}
         mobile={isMobile}
         sidebarCollapsed={sidebarCollapsed}
+        inspectorOpen={inspectorDocked ? inspectorOpen : inspectorSheetOpen}
+        onToggleInspector={toggleInspector}
+        onOpenContext={() => openInspector('context')}
         onCycleTheme={() =>
           changeTheme(
             themeSetting === 'dark'
@@ -1277,6 +1360,27 @@ export function App() {
         onDismissError={() => setErrorDismissed(true)}
         errorDismissed={errorDismissed}
       />
+
+      {inspectorDocked ? (
+        inspectorOpen && (
+          <div className="h-full w-[360px] shrink-0 border-l border-border animate-in fade-in-0 slide-in-from-right-4 duration-300">
+            {renderInspector(() => setInspectorOpen(false))}
+          </div>
+        )
+      ) : (
+        <Sheet open={inspectorSheetOpen} onOpenChange={setInspectorSheetOpen}>
+          <SheetContent
+            side="right"
+            closeLabel={t('app.close')}
+            showCloseButton={false}
+            className="w-[min(92vw,380px)] gap-0 border-l border-border p-0 sm:max-w-none"
+            aria-describedby={undefined}
+          >
+            <SheetTitle className="sr-only">{t('inspector.title')}</SheetTitle>
+            {renderInspector(() => setInspectorSheetOpen(false))}
+          </SheetContent>
+        </Sheet>
+      )}
 
       <SettingsDialog
         open={settingsOpen}
@@ -1369,33 +1473,26 @@ export function App() {
         title={t('app.shortcuts')}
         onClose={() => setHelpOpen(false)}
       >
-        <dl className="shortcut-list">
-          <div>
-            <dt>
-              <kbd>⌘/Ctrl</kbd> + <kbd>K</kbd>
-            </dt>
-            <dd>{t('app.shortcut.palette')}</dd>
-          </div>
-          <div>
-            <dt>
-              <kbd>⌘/Ctrl</kbd> + <kbd>N</kbd>
-            </dt>
-            <dd>{t('app.shortcut.new')}</dd>
-          </div>
-          <div>
-            <dt>
-              <kbd>Enter</kbd>
-            </dt>
-            <dd>{t('chat.send')}</dd>
-          </div>
-          <div>
-            <dt>
-              <kbd>Shift</kbd> + <kbd>Enter</kbd>
-            </dt>
-            <dd>{t('chat.composer.placeholder')}</dd>
-          </div>
+        <dl className="divide-y divide-border border-y border-border">
+          {(
+            [
+              [['⌘/Ctrl', 'K'], t('app.shortcut.palette')],
+              [['⌘/Ctrl', 'N'], t('app.shortcut.new')],
+              [['Enter'], t('chat.send')],
+              [['Shift', 'Enter'], t('chat.hint.newline')],
+            ] as Array<[string[], string]>
+          ).map(([keys, label]) => (
+            <div key={label} className="flex items-center justify-between gap-4 py-3 text-[13px]">
+              <dd className="text-foreground/80">{label}</dd>
+              <dt className="flex items-center gap-1">
+                {keys.map((key) => (
+                  <Kbd key={key}>{key}</Kbd>
+                ))}
+              </dt>
+            </div>
+          ))}
         </dl>
-        <p className="muted small">{t('palette.hint')}</p>
+        <p className="mt-4 text-[12.5px] text-muted-foreground">{t('palette.hint')}</p>
       </Modal>
 
       <Modal
@@ -1403,7 +1500,7 @@ export function App() {
         title={info?.title ?? ''}
         onClose={() => setInfo(null)}
       >
-        <p className="muted">{info?.body}</p>
+        <p className="text-[14px] leading-relaxed text-muted-foreground">{info?.body}</p>
       </Modal>
 
       <Modal
@@ -1412,30 +1509,24 @@ export function App() {
         onClose={() => setEditingMessage(null)}
         footer={
           <>
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => setEditingMessage(null)}
-            >
+            <Button variant="ghost" onClick={() => setEditingMessage(null)}>
               {t('app.cancel')}
-            </button>
-            <button
-              type="button"
-              className="primary-button"
+            </Button>
+            <Button
               disabled={editBusy || !editDraft.trim()}
               onClick={() => void saveEdit()}
             >
               {t('app.save')}
-            </button>
+            </Button>
           </>
         }
       >
-        <p className="muted small">{t('chat.editHint')}</p>
-        <textarea
-          className="text-input"
+        <p className="mb-3 text-[13px] text-muted-foreground">{t('chat.editHint')}</p>
+        <Textarea
           rows={8}
           value={editDraft}
           onChange={(event) => setEditDraft(event.target.value)}
+          className="text-[14px]"
         />
       </Modal>
 
@@ -1446,6 +1537,7 @@ export function App() {
         }
       />
     </div>
+    </InspectorContext.Provider>
   );
 }
 
@@ -1457,28 +1549,37 @@ function Toasts({
   onDismiss: (id: number) => void;
 }) {
   return (
-    <div className="toast-stack" role="region" aria-label="Notifications">
+    <div
+      className="fixed right-4 bottom-4 z-[200] flex w-[min(380px,calc(100vw-2rem))] flex-col gap-2"
+      role="region"
+      aria-label="Notifications"
+    >
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className={`toast toast-${toast.kind}`}
+          className={cn(
+            'toast flex items-start gap-3 border px-4 py-3 text-[13px] shadow-lg animate-rise',
+            toast.kind === 'error'
+              ? 'toast-error border-destructive bg-destructive text-white'
+              : 'border-foreground bg-foreground text-background',
+          )}
           role="status"
         >
           {toast.kind === 'error' ? (
-            <AlertTriangle size={15} aria-hidden="true" />
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
           ) : toast.kind === 'success' ? (
-            <CheckCircle2 size={15} aria-hidden="true" />
+            <CheckCircle2 className="mt-0.5 size-4 shrink-0 opacity-80" aria-hidden="true" />
           ) : (
-            <Info size={15} aria-hidden="true" />
+            <Info className="mt-0.5 size-4 shrink-0 opacity-70" aria-hidden="true" />
           )}
-          <span>{toast.message}</span>
+          <span className="min-w-0 flex-1 leading-relaxed break-words">{toast.message}</span>
           <button
             type="button"
-            className="icon-button"
+            className="-mr-1 grid size-6 shrink-0 place-items-center opacity-60 transition-opacity hover:opacity-100"
             onClick={() => onDismiss(toast.id)}
             aria-label="Dismiss"
           >
-            <X size={13} aria-hidden="true" />
+            <X className="size-3.5" aria-hidden="true" />
           </button>
         </div>
       ))}

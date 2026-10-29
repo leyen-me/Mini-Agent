@@ -1,6 +1,6 @@
 # Mini Agent
 
-一个**可运行、可持久化、可验收**的最小 Agent 工作台：后端 Python / FastAPI，前端 React + Vite，SQLite 使用 WAL，REST 操作 + SSE 事件流。
+一个**可运行、可持久化、可验收**的最小 Agent 工作台：后端 Python / FastAPI，前端 React + Vite + Tailwind CSS v4 + shadcn/ui，SQLite 使用 WAL，REST 操作 + SSE 事件流。
 
 本项目依据 [`create-common-agent-guide.md`](create-common-agent-guide.md) 的 P0 核心能力实现，并以该文件 **附录 D 验收清单** 作为硬性交付标准。验收清单的自动化证据见 [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md)。
 
@@ -137,6 +137,7 @@ backend/
   tests/              验收、网关、安全、配置测试
 frontend/
   src/                React UI、SSE 状态折叠、单元测试
+  src/components/ui/  shadcn/ui 基础组件（直角主题，可直接修改）
   e2e/                Playwright 端到端
 config/               示例配置与 JSON Schema
 docs/                 架构、验收证据、自检、截图

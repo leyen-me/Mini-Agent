@@ -4,6 +4,7 @@ import { api } from '../../api/client';
 import type { PluginInfo } from '../../api/types';
 import type { ToastFn } from './useAdmin';
 import { runAction } from './useAdmin';
+import { Button } from '@/components/ui/button';
 
 interface Props {
   onToast: ToastFn;
@@ -46,14 +47,14 @@ export function PluginsPanel({ onToast, onReload }: Props) {
               和 UI 元数据。
             </p>
           </div>
-          <button
+          <Button
             type="button"
-            className="primary-button"
+            size="sm"
             disabled={busy}
             onClick={() => inputRef.current?.click()}
           >
             <Upload size={14} /> 安装插件
-          </button>
+          </Button>
           <input
             ref={inputRef}
             type="file"
@@ -86,9 +87,9 @@ export function PluginsPanel({ onToast, onReload }: Props) {
               </div>
               <div className="admin-actions">
                 {!plugin.trusted ? (
-                  <button
+                  <Button
                     type="button"
-                    className="secondary-button"
+                    variant="outline" size="sm"
                     onClick={() =>
                       void runAction(
                         () => api.plugins.trust(plugin.id, true),
@@ -103,11 +104,11 @@ export function PluginsPanel({ onToast, onReload }: Props) {
                     }
                   >
                     <ShieldCheck size={13} /> 信任
-                  </button>
+                  </Button>
                 ) : (
-                  <button
+                  <Button
                     type="button"
-                    className="secondary-button"
+                    variant="outline" size="sm"
                     onClick={() =>
                       void runAction(
                         () => api.plugins.enable(plugin.id, !plugin.enabled),
@@ -122,11 +123,11 @@ export function PluginsPanel({ onToast, onReload }: Props) {
                     }
                   >
                     {plugin.enabled ? '停用' : '启用'}
-                  </button>
+                  </Button>
                 )}
-                <button
+                <Button
                   type="button"
-                  className="icon-button danger"
+                  variant="ghost" size="icon-sm" className="text-muted-foreground hover:bg-danger-soft hover:text-destructive"
                   aria-label="卸载插件"
                   onClick={() =>
                     void runAction(
@@ -142,7 +143,7 @@ export function PluginsPanel({ onToast, onReload }: Props) {
                   }
                 >
                   <Trash2 size={14} />
-                </button>
+                </Button>
               </div>
             </div>
           ))}

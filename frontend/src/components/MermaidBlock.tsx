@@ -49,9 +49,9 @@ export function MermaidBlock({ code }: { code: string }) {
 
   if (error) {
     return (
-      <div className="mermaid-error" role="alert">
+      <div className="mermaid-error my-4 border border-destructive/40 bg-danger-soft p-4 text-[13px] text-destructive" role="alert">
         <strong>Mermaid 渲染失败</strong>
-        <pre>{code}</pre>
+        <pre className="mt-2 font-mono text-[12px] whitespace-pre-wrap">{code}</pre>
         <details>
           <summary>错误详情</summary>
           <code>{error}</code>
@@ -60,14 +60,14 @@ export function MermaidBlock({ code }: { code: string }) {
     );
   }
   return (
-    <div className="mermaid-block" ref={container}>
+    <div className="mermaid-block my-4 overflow-auto border border-border bg-background p-4" ref={container}>
       {svg ? (
         <div
           className="mermaid-svg"
           dangerouslySetInnerHTML={{ __html: svg }}
         />
       ) : (
-        <div className="mermaid-loading" role="status">
+        <div className="mermaid-loading font-mono text-[12px] text-muted-foreground" role="status">
           正在渲染图表…
         </div>
       )}

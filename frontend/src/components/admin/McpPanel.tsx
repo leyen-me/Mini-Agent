@@ -4,6 +4,10 @@ import { api } from '../../api/client';
 import type { McpServer, Session } from '../../api/types';
 import type { ToastFn } from './useAdmin';
 import { runAction } from './useAdmin';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { SimpleSelect } from '@/components/common/SimpleSelect';
 
 interface Props {
   session: Session | null;
@@ -96,9 +100,9 @@ export function McpPanel({ session, onToast }: Props) {
                 )}
               </div>
               <div className="admin-actions">
-                <button
+                <Button
                   type="button"
-                  className="secondary-button"
+                  variant="outline" size="sm"
                   onClick={() =>
                     void runAction(
                       () => api.mcp.test(server.id),
@@ -110,10 +114,10 @@ export function McpPanel({ session, onToast }: Props) {
                   }
                 >
                   <RefreshCw size={13} /> 测试
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className="secondary-button"
+                  variant="outline" size="sm"
                   onClick={() =>
                     void runAction(
                       () => api.mcp.refresh(server.id),
@@ -125,11 +129,11 @@ export function McpPanel({ session, onToast }: Props) {
                   }
                 >
                   刷新
-                </button>
+                </Button>
                 {session && (
-                  <button
+                  <Button
                     type="button"
-                    className="secondary-button"
+                    variant="outline" size="sm"
                     onClick={() =>
                       void runAction(
                         () =>
@@ -146,11 +150,11 @@ export function McpPanel({ session, onToast }: Props) {
                     }
                   >
                     {server.sessionEnabled ? '本会话停用' : '本会话启用'}
-                  </button>
+                  </Button>
                 )}
-                <button
+                <Button
                   type="button"
-                  className="icon-button danger"
+                  variant="ghost" size="icon-sm" className="text-muted-foreground hover:bg-danger-soft hover:text-destructive"
                   aria-label="删除 MCP"
                   onClick={() =>
                     void runAction(
@@ -163,7 +167,7 @@ export function McpPanel({ session, onToast }: Props) {
                   }
                 >
                   <Trash2 size={14} />
-                </button>
+                </Button>
               </div>
             </div>
           ))}
@@ -175,7 +179,7 @@ export function McpPanel({ session, onToast }: Props) {
         <div className="form-grid">
           <label className="field">
             <span>名称</span>
-            <input
+            <Input
               value={form.name}
               onChange={(event) =>
                 setForm({ ...form, name: event.target.value })
@@ -184,23 +188,21 @@ export function McpPanel({ session, onToast }: Props) {
           </label>
           <label className="field">
             <span>传输</span>
-            <select
+            <SimpleSelect
               value={form.transport}
-              onChange={(event) =>
-                setForm({
-                  ...form,
-                  transport: event.target.value as typeof form.transport,
-                })
+              onValueChange={(value) =>
+                setForm({ ...form, transport: value as typeof form.transport })
               }
-            >
-              <option value="stdio">stdio</option>
-              <option value="http">Streamable HTTP</option>
-              <option value="sse">SSE</option>
-            </select>
+              options={[
+                { value: 'stdio', label: 'stdio' },
+                { value: 'http', label: 'Streamable HTTP' },
+                { value: 'sse', label: 'SSE' },
+              ]}
+            />
           </label>
           <label className="field wide">
             <span>描述</span>
-            <input
+            <Input
               value={form.description}
               onChange={(event) =>
                 setForm({ ...form, description: event.target.value })
@@ -211,7 +213,7 @@ export function McpPanel({ session, onToast }: Props) {
             <>
               <label className="field">
                 <span>命令</span>
-                <input
+                <Input
                   value={form.command}
                   onChange={(event) =>
                     setForm({ ...form, command: event.target.value })
@@ -221,7 +223,7 @@ export function McpPanel({ session, onToast }: Props) {
               </label>
               <label className="field">
                 <span>参数（空格分隔）</span>
-                <input
+                <Input
                   value={form.args}
                   onChange={(event) =>
                     setForm({ ...form, args: event.target.value })
@@ -230,7 +232,7 @@ export function McpPanel({ session, onToast }: Props) {
               </label>
               <label className="field wide">
                 <span>环境变量 JSON</span>
-                <textarea
+                <Textarea
                   rows={2}
                   value={form.env}
                   onChange={(event) =>
@@ -243,7 +245,7 @@ export function McpPanel({ session, onToast }: Props) {
             <>
               <label className="field wide">
                 <span>URL</span>
-                <input
+                <Input
                   value={form.url}
                   onChange={(event) =>
                     setForm({ ...form, url: event.target.value })
@@ -252,7 +254,7 @@ export function McpPanel({ session, onToast }: Props) {
               </label>
               <label className="field wide">
                 <span>Headers JSON</span>
-                <textarea
+                <Textarea
                   rows={2}
                   value={form.headers}
                   onChange={(event) =>
@@ -263,14 +265,14 @@ export function McpPanel({ session, onToast }: Props) {
             </>
           )}
         </div>
-        <button
+        <Button
           type="button"
-          className="primary-button"
+          size="sm"
           disabled={!form.name.trim()}
           onClick={() => void create()}
         >
           <Plus size={14} /> 创建
-        </button>
+        </Button>
       </section>
     </div>
   );

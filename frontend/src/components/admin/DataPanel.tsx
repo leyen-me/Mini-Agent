@@ -4,6 +4,8 @@ import { api, currentApiToken } from '../../api/client';
 import type { BackupInfo, Workspace } from '../../api/types';
 import type { ToastFn } from './useAdmin';
 import { runAction } from './useAdmin';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 interface Props {
   workspaces: Workspace[];
@@ -80,9 +82,9 @@ export function DataPanel({ workspaces, onToast, onReload }: Props) {
                 )}
               </div>
               <div className="admin-actions">
-                <button
+                <Button
                   type="button"
-                  className="secondary-button"
+                  variant="outline" size="sm"
                   onClick={() => {
                     const alias = window.prompt(
                       '工作区别名',
@@ -99,10 +101,10 @@ export function DataPanel({ workspaces, onToast, onReload }: Props) {
                   }}
                 >
                   重命名
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className="icon-button danger"
+                  variant="ghost" size="icon-sm" className="text-muted-foreground hover:bg-danger-soft hover:text-destructive"
                   aria-label="删除工作区"
                   onClick={() => {
                     if (!window.confirm('删除工作区？仅当没有会话时允许。'))
@@ -117,7 +119,7 @@ export function DataPanel({ workspaces, onToast, onReload }: Props) {
                   }}
                 >
                   <Trash2 size={14} />
-                </button>
+                </Button>
               </div>
             </div>
           ))}
@@ -125,7 +127,7 @@ export function DataPanel({ workspaces, onToast, onReload }: Props) {
         <div className="form-grid">
           <label className="field">
             <span>工作区名称</span>
-            <input
+            <Input
               value={workspaceForm.name}
               onChange={(event) =>
                 setWorkspaceForm({ ...workspaceForm, name: event.target.value })
@@ -134,7 +136,7 @@ export function DataPanel({ workspaces, onToast, onReload }: Props) {
           </label>
           <label className="field">
             <span>别名</span>
-            <input
+            <Input
               value={workspaceForm.alias}
               onChange={(event) =>
                 setWorkspaceForm({
@@ -146,7 +148,7 @@ export function DataPanel({ workspaces, onToast, onReload }: Props) {
           </label>
           <label className="field wide">
             <span>描述</span>
-            <input
+            <Input
               value={workspaceForm.description}
               onChange={(event) =>
                 setWorkspaceForm({
@@ -157,9 +159,9 @@ export function DataPanel({ workspaces, onToast, onReload }: Props) {
             />
           </label>
         </div>
-        <button
+        <Button
           type="button"
-          className="secondary-button"
+          variant="outline" size="sm"
           disabled={!workspaceForm.name.trim()}
           onClick={() =>
             runAction(
@@ -183,7 +185,7 @@ export function DataPanel({ workspaces, onToast, onReload }: Props) {
           }
         >
           <Plus size={14} /> 创建工作区
-        </button>
+        </Button>
       </section>
 
       <section className="admin-section">
@@ -195,9 +197,9 @@ export function DataPanel({ workspaces, onToast, onReload }: Props) {
               数据库快照，可选包含上传、artifacts、检查点。恢复需要重启服务。
             </p>
           </div>
-          <button
+          <Button
             type="button"
-            className="primary-button"
+            size="sm"
             onClick={() =>
               runAction(
                 () => api.backups.create(true),
@@ -209,7 +211,7 @@ export function DataPanel({ workspaces, onToast, onReload }: Props) {
             }
           >
             <Download size={14} /> 创建备份
-          </button>
+          </Button>
         </header>
         <div className="admin-list">
           {backups.map((backup) => (
@@ -224,21 +226,21 @@ export function DataPanel({ workspaces, onToast, onReload }: Props) {
               </div>
               <div className="admin-actions">
                 <a
-                  className="secondary-button"
+                  className={buttonVariants({ variant: 'outline', size: 'sm' })}
                   href={api.backups.downloadUrl(backup.id)}
                 >
                   下载
                 </a>
-                <button
+                <Button
                   type="button"
-                  className="secondary-button"
+                  variant="outline" size="sm"
                   onClick={() => void restore(backup)}
                 >
                   <RotateCcw size={13} /> 恢复
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className="icon-button danger"
+                  variant="ghost" size="icon-sm" className="text-muted-foreground hover:bg-danger-soft hover:text-destructive"
                   aria-label="删除备份"
                   onClick={() =>
                     void runAction(
@@ -251,7 +253,7 @@ export function DataPanel({ workspaces, onToast, onReload }: Props) {
                   }
                 >
                   <Trash2 size={14} />
-                </button>
+                </Button>
               </div>
             </div>
           ))}
@@ -262,23 +264,23 @@ export function DataPanel({ workspaces, onToast, onReload }: Props) {
       <section className="admin-section">
         <h3>导入 / 运维</h3>
         <div className="admin-actions">
-          <button
+          <Button
             type="button"
-            className="secondary-button"
+            variant="outline" size="sm"
             onClick={() => importRef.current?.click()}
           >
             <Upload size={14} /> 导入会话 JSON
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className="secondary-button"
+            variant="outline" size="sm"
             onClick={() => void runAction(() => api.downloadLogs(), onToast)}
           >
             导出日志
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className="secondary-button"
+            variant="outline" size="sm"
             onClick={() =>
               void runAction(
                 () => api.cleanupRetention(),
@@ -290,7 +292,7 @@ export function DataPanel({ workspaces, onToast, onReload }: Props) {
             }
           >
             执行保留策略清理
-          </button>
+          </Button>
         </div>
         <input
           ref={importRef}
@@ -311,7 +313,7 @@ export function DataPanel({ workspaces, onToast, onReload }: Props) {
         )}
         <label className="field">
           <span>浏览器 API Token（仅本浏览器 local storage）</span>
-          <input
+          <Input
             type="password"
             value={apiToken}
             placeholder="远程部署或反向代理时填写"

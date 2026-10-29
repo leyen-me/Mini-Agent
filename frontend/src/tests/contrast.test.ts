@@ -11,13 +11,18 @@ describe('light and dark theme contrast', () => {
       const tokens = extractThemeTokens(css, theme);
       expect(Object.keys(tokens).length).toBeGreaterThan(10);
       const pairs: Array<[string, string, number]> = [
-        ['--text', '--surface', 7],
-        ['--text', '--bg', 7],
-        ['--text-soft', '--surface', 4.5],
-        ['--muted', '--surface', 4.5],
-        ['--code-text', '--code-bg', 7],
-        ['--accent', '--surface', 3],
-        ['--danger', '--danger-soft', 3],
+        ['--foreground', '--background', 7],
+        ['--foreground', '--card', 7],
+        ['--foreground', '--sidebar', 7],
+        ['--muted-foreground', '--background', 4.5],
+        ['--muted-foreground', '--sidebar', 4.5],
+        ['--muted-foreground', '--muted', 4.5],
+        ['--primary-foreground', '--primary', 7],
+        ['--code-foreground', '--code-bg', 7],
+        ['--signal', '--background', 3],
+        ['--destructive', '--danger-soft', 3],
+        ['--warning', '--warning-soft', 4.5],
+        ['--success', '--success-soft', 4.5],
       ];
       for (const [foreground, background, minimum] of pairs) {
         const ratio = contrastRatio(tokens[foreground], tokens[background]);

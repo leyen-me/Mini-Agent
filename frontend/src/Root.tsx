@@ -4,6 +4,7 @@ import { ShareView } from './components/ShareView';
 import { createTranslator, type Language } from './lib/i18n';
 import { applyTheme, loadTheme, resolveTheme, saveTheme, type ResolvedTheme, type ThemeSetting } from './lib/theme';
 import { UiContext } from './state/UiContext';
+import { Button } from '@/components/ui/button';
 
 function loadLanguage(): Language {
   try {
@@ -29,13 +30,13 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   render() {
     if (this.state.error) {
       return (
-        <div className="boot-screen">
-          <div className="centered-error">
-            <h1>界面渲染失败 / UI crashed</h1>
-            <p className="muted">{this.state.error.message}</p>
-            <button type="button" className="primary-button" onClick={() => window.location.reload()}>
-              重新加载 / Reload
-            </button>
+        <div className="grid h-dvh place-items-center bg-background p-6">
+          <div className="flex max-w-md flex-col items-start gap-4">
+            <span className="font-mono text-[10.5px] tracking-[0.12em] text-destructive uppercase">
+              界面渲染失败 / UI crashed
+            </span>
+            <p className="font-mono text-[13px] text-muted-foreground">{this.state.error.message}</p>
+            <Button onClick={() => window.location.reload()}>重新加载 / Reload</Button>
           </div>
         </div>
       );

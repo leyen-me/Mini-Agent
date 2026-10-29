@@ -13,76 +13,139 @@ import {
 } from 'lucide-react';
 import type { SessionStatus, ToolStatus, TurnStatus } from '../api/types';
 import { useUi } from '../state/UiContext';
+import { cn } from '@/lib/utils';
 
-const sessionIcons: Record<SessionStatus, typeof Circle> = {
-  idle: Circle,
-  running: Loader2,
-  waiting_user: ShieldAlert,
-  paused: Pause,
-  compacting: RefreshCw,
-  error: AlertTriangle,
+type Tone = 'neutral' | 'live' | 'ok' | 'warn' | 'bad';
+
+const toneText: Record<Tone, string> = {
+  neutral: 'text-muted-foreground',
+  live: 'text-signal',
+  ok: 'text-success',
+  warn: 'text-warning',
+  bad: 'text-destructive',
 };
 
-export function SessionStatusBadge({ status, compact = false }: { status: SessionStatus; compact?: boolean }) {
+const sessionMeta: Record<SessionStatus, [typeof Circle, Tone]> = {
+  idle: [Circle, 'neutral'],
+  running: [Loader2, 'live'],
+  waiting_user: [ShieldAlert, 'warn'],
+  paused: [Pause, 'warn'],
+  compacting: [RefreshCw, 'live'],
+  error: [AlertTriangle, 'bad'],
+};
+
+export function SessionStatusBadge({
+  status,
+  compact = false,
+}: {
+  status: SessionStatus;
+  compact?: boolean;
+}) {
   const { t } = useUi();
-  const Icon = sessionIcons[status] ?? Circle;
+  const [Icon, tone] = sessionMeta[status] ?? [Circle, 'neutral'];
   const spinning = status === 'running' || status === 'compacting';
   return (
-    <span className={`status-badge status-${status}`} role="status" aria-label={t(`status.${status}`)} title={t(`status.${status}`)}>
-      <Icon size={compact ? 12 : 14} aria-hidden="true" className={spinning ? 'spin' : undefined} />
-      <span className="status-label">{t(`status.${status}`)}</span>
+    <span
+      className={cn(
+        'status-badge inline-flex items-center gap-1.5 whitespace-nowrap font-mono text-[11px]',
+        toneText[tone],
+      )}
+      role="status"
+      aria-label={t(`status.${status}`)}
+      title={t(`status.${status}`)}
+    >
+      <Icon
+        className={cn(compact ? 'size-3' : 'size-3.5', spinning && 'animate-spin')}
+        aria-hidden="true"
+      />
+      <span>{t(`status.${status}`)}</span>
     </span>
   );
 }
 
-const toolIcons: Record<ToolStatus, typeof Circle> = {
-  validating: Loader2,
-  awaiting_permission: ShieldAlert,
-  running: Loader2,
-  succeeded: CheckCircle2,
-  failed: XCircle,
-  denied: Ban,
-  cancelled: Ban,
-  timeout: Timer,
+const toolMeta: Record<ToolStatus, [typeof Circle, Tone]> = {
+  validating: [Loader2, 'live'],
+  awaiting_permission: [ShieldAlert, 'warn'],
+  running: [Loader2, 'live'],
+  succeeded: [CheckCircle2, 'ok'],
+  failed: [XCircle, 'bad'],
+  denied: [Ban, 'bad'],
+  cancelled: [Ban, 'neutral'],
+  timeout: [Timer, 'bad'],
 };
 
 export function ToolStatusBadge({ status }: { status: ToolStatus }) {
   const { t } = useUi();
-  const Icon = toolIcons[status] ?? Wrench;
+  const [Icon, tone] = toolMeta[status] ?? [Wrench, 'neutral'];
   const spinning = status === 'running' || status === 'validating';
   return (
-    <span className={`tool-status tool-${status}`} role="status" aria-label={t(`tool.${status}`)}>
-      <Icon size={13} aria-hidden="true" className={spinning ? 'spin' : undefined} />
+    <span
+      className={cn(
+        `tool-status tool-${status} inline-flex items-center gap-1 whitespace-nowrap text-[11.5px] font-medium`,
+        toneText[tone],
+      )}
+      role="status"
+      aria-label={t(`tool.${status}`)}
+    >
+      <Icon
+        className={cn('size-3.5', spinning && 'animate-spin')}
+        aria-hidden="true"
+      />
       <span>{t(`tool.${status}`)}</span>
     </span>
   );
 }
 
-const turnIcons: Record<TurnStatus, typeof Circle> = {
-  running: Loader2,
-  completed: CheckCircle2,
-  paused: Pause,
-  failed: XCircle,
-  cancelled: Ban,
+const turnMeta: Record<TurnStatus, [typeof Circle, Tone]> = {
+  running: [Loader2, 'live'],
+  completed: [CheckCircle2, 'ok'],
+  paused: [Pause, 'warn'],
+  failed: [XCircle, 'bad'],
+  cancelled: [Ban, 'neutral'],
 };
 
 export function TurnStatusBadge({ status }: { status: TurnStatus }) {
   const { t } = useUi();
-  const Icon = turnIcons[status] ?? Circle;
+  const [Icon, tone] = turnMeta[status] ?? [Circle, 'neutral'];
   return (
-    <span className={`turn-status turn-${status}`} role="status">
-      <Icon size={12} aria-hidden="true" className={status === 'running' ? 'spin' : undefined} />
+    <span
+      className={cn(
+        `turn-status turn-${status} inline-flex items-center gap-1.5 whitespace-nowrap text-[12px]`,
+        status === 'completed' ? 'text-muted-foreground' : toneText[tone],
+      )}
+      role="status"
+    >
+      <Icon
+        className={cn(
+          'size-3.5',
+          status === 'completed' && 'text-success',
+          status === 'running' && 'animate-spin',
+        )}
+        aria-hidden="true"
+      />
       <span>{t(`turn.${status}`)}</span>
     </span>
   );
 }
 
+const riskTone: Record<'low' | 'medium' | 'high', string> = {
+  high: 'border-destructive/25 bg-danger-soft text-destructive',
+  medium: 'border-warning/25 bg-warning-soft text-warning',
+  low: 'border-success/25 bg-success-soft text-success',
+};
+
 export function RiskBadge({ risk }: { risk: 'low' | 'medium' | 'high' }) {
   const { t } = useUi();
-  const Icon = risk === 'high' ? AlertTriangle : risk === 'medium' ? ShieldAlert : CheckCircle2;
+  const Icon =
+    risk === 'high' ? AlertTriangle : risk === 'medium' ? ShieldAlert : CheckCircle2;
   return (
-    <span className={`risk-badge risk-${risk}`}>
-      <Icon size={12} aria-hidden="true" />
+    <span
+      className={cn(
+        `risk-badge risk-${risk} inline-flex items-center gap-1 border px-1.5 py-px font-mono text-[10.5px] whitespace-nowrap uppercase tracking-wide`,
+        riskTone[risk],
+      )}
+    >
+      <Icon className="size-3" aria-hidden="true" />
       <span>
         {t('chat.interaction.risk')}: {t(`chat.interaction.risk.${risk}`)}
       </span>

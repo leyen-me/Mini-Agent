@@ -1,14 +1,11 @@
 import {
   ArrowUp,
   AtSign,
-  Brain,
-  ChevronDown,
   FileText,
   Paperclip,
-  Send,
   Slash,
   Square,
-  Wrench,
+  X,
 } from 'lucide-react';
 import {
   useEffect,
@@ -31,6 +28,12 @@ import type {
 } from '../api/types';
 import { clearDraft, loadDraft, saveDraft } from '../lib/draft';
 import { useUi } from '../state/UiContext';
+import { IconButton } from '@/components/common/IconButton';
+import { Segmented } from '@/components/common/Segmented';
+import { SimpleSelect } from '@/components/common/SimpleSelect';
+import { Button } from '@/components/ui/button';
+import { Kbd } from '@/components/ui/kbd';
+import { cn } from '@/lib/utils';
 import { QueuePanel } from './QueuePanel';
 
 interface SlashCommand {
@@ -98,7 +101,7 @@ export function Composer({
   pendingReference,
   onReferenceConsumed,
 }: Props) {
-  const { t, language } = useUi();
+  const { t } = useUi();
   const [value, setValue] = useState('');
   const composingRef = useRef(false);
   const [menu, setMenu] = useState<'slash' | 'files' | null>(null);
@@ -459,121 +462,149 @@ export function Composer({
   const activeModel = models.find((model) => model.ref === session?.model);
   const reasoningLevels = activeModel?.reasoning_levels ?? ['off'];
 
+  const menuItemClass = (active: boolean) =>
+    cn(
+      'composer-menu-item flex w-full items-center gap-3 px-3 py-2 text-left text-[13px] transition-colors',
+      active ? 'bg-accent text-foreground' : 'text-foreground/80',
+    );
+
   return (
-    <div className="composer-shell">
-      <QueuePanel
-        items={queue}
-        onUpdate={onUpdateQueue}
-        onDelete={onDeleteQueue}
-      />
-      <div className={`composer ${dragging ? 'is-dragging' : ''}`}>
-        {menu === 'slash' && (
-          <div
-            className="composer-menu"
-            ref={menuRef}
-            role="listbox"
-            aria-label={t('chat.slash')}
-          >
-            <div className="composer-menu-label">{t('chat.slash')}</div>
-            {filteredCommands.length === 0 && (
-              <div className="composer-menu-empty">
-                {t('palette.noResults')}
-              </div>
-            )}
-            {filteredCommands.map((item, index) => (
-              <button
-                type="button"
-                key={item.command}
-                className={`composer-menu-item ${index === menuIndex ? 'active' : ''}`}
-                role="option"
-                aria-selected={index === menuIndex}
-                onMouseEnter={() => setMenuIndex(index)}
-                onClick={() => runCommand(item.command, item.custom)}
-              >
-                <Slash size={14} aria-hidden="true" />
-                <span className="menu-command">{item.command}</span>
-                <span className="menu-label">{item.label}</span>
-              </button>
-            ))}
-          </div>
+    <div className="composer-shell flex w-full max-w-[760px] flex-col gap-2">
+      <QueuePanel items={queue} onUpdate={onUpdateQueue} onDelete={onDeleteQueue} />
+      <div
+        className={cn(
+          'composer relative border border-border-strong bg-background transition-[border-color,box-shadow] duration-200',
+          'shadow-[0_1px_2px_rgba(0,0,0,0.04),0_12px_32px_-16px_rgba(0,0,0,0.12)] focus-within:border-foreground',
+          dragging && 'border-signal',
         )}
-        {menu === 'files' && (
+      >
+        {menu && (
           <div
-            className="composer-menu"
+            className="composer-menu absolute inset-x-0 bottom-[calc(100%+8px)] z-30 max-h-80 overflow-auto border border-border bg-popover shadow-lg animate-rise"
             ref={menuRef}
             role="listbox"
-            aria-label={t('chat.files')}
+            aria-label={menu === 'slash' ? t('chat.slash') : t('chat.files')}
           >
-            <div className="composer-menu-label">
-              <AtSign size={13} aria-hidden="true" /> {t('chat.files')}
+            <div className="eyebrow flex items-center gap-2 border-b border-border px-3 py-2">
+              {menu === 'slash' ? <Slash className="size-3" /> : <AtSign className="size-3" />}
+              {menu === 'slash' ? t('chat.slash') : t('chat.files')}
             </div>
-            {!files && (
-              <div className="composer-menu-empty">{t('app.loading')}…</div>
+            {menu === 'slash' && (
+              <>
+                {filteredCommands.length === 0 && (
+                  <p className="px-3 py-4 text-center text-[12px] text-muted-foreground">
+                    {t('palette.noResults')}
+                  </p>
+                )}
+                {filteredCommands.map((item, index) => (
+                  <button
+                    type="button"
+                    key={item.command}
+                    className={menuItemClass(index === menuIndex)}
+                    role="option"
+                    aria-selected={index === menuIndex}
+                    onMouseEnter={() => setMenuIndex(index)}
+                    onClick={() => runCommand(item.command, item.custom)}
+                  >
+                    <span className="shrink-0 font-mono text-[12.5px] text-foreground">
+                      {item.command}
+                    </span>
+                    <span className="truncate text-[12.5px] text-muted-foreground">
+                      {item.label}
+                    </span>
+                  </button>
+                ))}
+              </>
             )}
-            {files && filteredFiles.length === 0 && (
-              <div className="composer-menu-empty">{t('chat.noFiles')}</div>
+            {menu === 'files' && (
+              <>
+                {!files && (
+                  <p className="px-3 py-4 text-center text-[12px] text-muted-foreground">
+                    {t('app.loading')}…
+                  </p>
+                )}
+                {files && filteredFiles.length === 0 && (
+                  <p className="px-3 py-4 text-center text-[12px] text-muted-foreground">
+                    {t('chat.noFiles')}
+                  </p>
+                )}
+                {filteredFiles.slice(0, 30).map((file, index) => (
+                  <button
+                    type="button"
+                    key={file.path}
+                    className={menuItemClass(index === menuIndex)}
+                    role="option"
+                    aria-selected={index === menuIndex}
+                    onMouseEnter={() => setMenuIndex(index)}
+                    onClick={() => insertFile(file)}
+                  >
+                    <FileText className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate font-mono text-[12.5px]">{file.path}</span>
+                  </button>
+                ))}
+              </>
             )}
-            {filteredFiles.slice(0, 30).map((file, index) => (
-              <button
-                type="button"
-                key={file.path}
-                className={`composer-menu-item ${index === menuIndex ? 'active' : ''}`}
-                role="option"
-                aria-selected={index === menuIndex}
-                onMouseEnter={() => setMenuIndex(index)}
-                onClick={() => insertFile(file)}
-              >
-                <FileText size={14} aria-hidden="true" />
-                <span className="menu-command">{file.path}</span>
-              </button>
-            ))}
           </div>
         )}
+
         {(attachments.length > 0 || uploading > 0) && (
-          <div className="attachment-strip" aria-label={t('chat.attachments')}>
+          <div
+            className="attachment-strip flex flex-wrap gap-2 border-b border-border px-3 py-3"
+            aria-label={t('chat.attachments')}
+          >
             {attachments.map((attachment) => (
-              <div className="attachment-chip" key={attachment.id}>
+              <div
+                className="attachment-chip group/att relative flex max-w-56 items-center gap-2 border border-border bg-muted py-1 pr-1 pl-1"
+                key={attachment.id}
+              >
                 {attachment.kind === 'image' ? (
                   <button
                     type="button"
-                    className="attachment-thumb"
                     onClick={() => setPreviewAttachment(attachment)}
                     title={attachment.filename}
                   >
-                    <img src={attachment.url} alt={attachment.filename} />
+                    <img
+                      src={attachment.url}
+                      alt={attachment.filename}
+                      className="size-9 object-cover"
+                    />
                   </button>
                 ) : (
                   <a
-                    className="attachment-file"
+                    className="flex min-w-0 items-center gap-2 pl-1.5 text-[12px]"
                     href={attachment.url}
                     target="_blank"
                     rel="noreferrer"
                   >
-                    <FileText size={15} aria-hidden="true" />
-                    <span>{attachment.filename}</span>
+                    <FileText className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{attachment.filename}</span>
                   </a>
                 )}
-                <button
-                  type="button"
-                  className="attachment-remove"
+                <IconButton
+                  size="icon-xs"
+                  label={`${t('app.remove')} ${attachment.filename}`}
                   onClick={() => removeAttachment(attachment.id)}
-                  aria-label={`${t('app.remove')} ${attachment.filename}`}
                 >
-                  ×
-                </button>
+                  <X />
+                </IconButton>
               </div>
             ))}
-            {uploading > 0 && <div className="attachment-uploading">…</div>}
+            {uploading > 0 && (
+              <div className="thinking-dots self-center" aria-label={t('app.loading')}>
+                <span />
+                <span />
+                <span />
+              </div>
+            )}
           </div>
         )}
+
         <textarea
           ref={ref}
           value={value}
           rows={1}
           placeholder={
-            busy
-              ? t('chat.composer.placeholderRunning')
-              : t('chat.composer.placeholder')
+            busy ? t('chat.composer.placeholderRunning') : t('chat.composer.placeholder')
           }
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={onKeyDown}
@@ -592,10 +623,16 @@ export function Composer({
           onDrop={onDrop}
           aria-label={t('chat.composer.placeholder')}
           data-testid="composer-input"
+          className="block max-h-64 min-h-[56px] w-full resize-none bg-transparent px-4 pt-4 pb-2 text-[15px] leading-relaxed outline-none placeholder:text-muted-foreground max-sm:text-base"
         />
-        {dragging && <div className="drop-overlay">{t('chat.upload')}</div>}
-        <div className="composer-toolbar">
-          <div className="composer-toolbar-left">
+        {dragging && (
+          <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center border-2 border-dashed border-signal bg-signal-soft/90 text-[13px] font-medium text-signal">
+            {t('chat.upload')}
+          </div>
+        )}
+
+        <div className="composer-toolbar flex items-center justify-between gap-2 px-2 pt-1 pb-2">
+          <div className="flex min-w-0 items-center gap-0.5">
             <input
               ref={fileInputRef}
               type="file"
@@ -604,208 +641,152 @@ export function Composer({
               onChange={onFileInput}
               accept="image/*,.pdf,.md,.json,.yaml,.yml,.py,.ts,.tsx,.js,.css,.html,.txt"
             />
-            <button
-              type="button"
-              className="icon-button"
-              title={t('chat.upload')}
-              aria-label={t('chat.upload')}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Paperclip size={16} aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              className="icon-button"
-              title={t('chat.files')}
-              aria-label={t('chat.files')}
+            <IconButton label={t('chat.upload')} side="top" onClick={() => fileInputRef.current?.click()}>
+              <Paperclip />
+            </IconButton>
+            <IconButton
+              label={t('chat.files')}
+              side="top"
               onClick={() => {
                 setValue(
-                  (current) =>
-                    `${current}${current.endsWith(' ') || !current ? '' : ' '}@`,
+                  (current) => `${current}${current.endsWith(' ') || !current ? '' : ' '}@`,
                 );
                 setFiles(null);
                 ref.current?.focus();
               }}
             >
-              <AtSign size={16} aria-hidden="true" />
-            </button>
-            <div
-              className="mode-switch"
-              role="group"
-              aria-label={t('app.agent')}
-            >
-              <button
-                type="button"
-                className={session?.mode !== 'plan' ? 'active' : ''}
-                title={t('chat.mode.buildHint')}
-                onClick={() => void onModeChange('build')}
-              >
-                <Wrench size={13} aria-hidden="true" /> {t('chat.mode.build')}
-              </button>
-              <button
-                type="button"
-                className={session?.mode === 'plan' ? 'active' : ''}
-                title={t('chat.mode.planHint')}
-                onClick={() => void onModeChange('plan')}
-              >
-                <Brain size={13} aria-hidden="true" /> {t('chat.mode.plan')}
-              </button>
-            </div>
+              <AtSign />
+            </IconButton>
+            <span className="mx-1.5 h-4 w-px bg-border" aria-hidden="true" />
+            <Segmented
+              ariaLabel={t('app.agent')}
+              value={session?.mode === 'plan' ? 'plan' : 'build'}
+              onChange={(mode) => void onModeChange(mode)}
+              options={[
+                { value: 'build', label: t('chat.mode.build'), title: t('chat.mode.buildHint') },
+                { value: 'plan', label: t('chat.mode.plan'), title: t('chat.mode.planHint') },
+              ]}
+            />
           </div>
-          <div className="composer-toolbar-right">
+          <div className="flex min-w-0 items-center gap-1">
             {busy && (
-              <div
-                className="delivery-switch"
-                role="group"
-                aria-label={t('chat.queue')}
-              >
-                <button
-                  type="button"
-                  className={delivery === 'queue' ? 'active' : ''}
-                  title={t('chat.queueHint')}
-                  onClick={() => setDelivery('queue')}
-                >
-                  {t('chat.queue')}
-                </button>
-                <button
-                  type="button"
-                  className={delivery === 'steer' ? 'active' : ''}
-                  title={t('chat.steerHint')}
-                  onClick={() => setDelivery('steer')}
-                >
-                  {t('chat.steer')}
-                </button>
-              </div>
+              <Segmented
+                className="max-sm:hidden"
+                ariaLabel={t('chat.queue')}
+                value={delivery}
+                onChange={setDelivery}
+                options={[
+                  { value: 'queue', label: t('chat.queue'), title: t('chat.queueHint') },
+                  { value: 'steer', label: t('chat.steer'), title: t('chat.steerHint') },
+                ]}
+              />
             )}
-            <label className="select-label model-select">
-              <span className="sr-only">{t('chat.model')}</span>
-              <select
-                value={session?.model ?? ''}
-                disabled={!session || models.length === 0}
-                aria-label={t('chat.model')}
-                onChange={(event) => {
-                  const next = models.find(
-                    (model) => model.ref === event.target.value,
-                  );
-                  const reasoning = next?.reasoning_levels.includes(
-                    session?.reasoningLevel ?? '',
-                  )
-                    ? (session?.reasoningLevel ??
-                      next.reasoning_levels[0] ??
-                      'off')
-                    : (next?.reasoning_levels[0] ?? 'off');
-                  void onModelChange(event.target.value, reasoning);
-                }}
-              >
-                {models.map((model) => (
-                  <option key={model.ref} value={model.ref}>
-                    {model.name}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={12} aria-hidden="true" />
-            </label>
-            <label className="select-label reasoning-select">
-              <span className="sr-only">{t('chat.reasoning')}</span>
-              <select
+            <SimpleSelect
+              size="sm"
+              ariaLabel={t('chat.model')}
+              value={session?.model ?? ''}
+              disabled={!session || models.length === 0}
+              className="model-select h-8 w-auto max-w-44 border-transparent bg-transparent px-2 text-[12.5px] text-muted-foreground hover:bg-accent hover:text-foreground dark:bg-transparent max-sm:max-w-28"
+              onValueChange={(next) => {
+                const model = models.find((item) => item.ref === next);
+                const reasoning = model?.reasoning_levels.includes(session?.reasoningLevel ?? '')
+                  ? (session?.reasoningLevel ?? model.reasoning_levels[0] ?? 'off')
+                  : (model?.reasoning_levels[0] ?? 'off');
+                void onModelChange(next, reasoning);
+              }}
+              options={models.map((model) => ({ value: model.ref, label: model.name }))}
+            />
+            {reasoningLevels.length > 1 && (
+              <SimpleSelect
+                size="sm"
+                ariaLabel={t('chat.reasoning')}
                 value={session?.reasoningLevel ?? 'off'}
-                disabled={!session || reasoningLevels.length <= 1}
-                aria-label={t('chat.reasoning')}
-                onChange={(event) =>
-                  session &&
-                  void onModelChange(session.model, event.target.value)
-                }
-              >
-                {reasoningLevels.map((level) => (
-                  <option key={level} value={level}>
-                    {t(`chat.reasoning.${level}`)}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={12} aria-hidden="true" />
-            </label>
+                disabled={!session}
+                className="reasoning-select h-8 w-auto border-transparent bg-transparent px-2 text-[12.5px] text-muted-foreground hover:bg-accent hover:text-foreground dark:bg-transparent max-md:hidden"
+                onValueChange={(level) => session && void onModelChange(session.model, level)}
+                options={reasoningLevels.map((level) => ({
+                  value: level,
+                  label: t(`chat.reasoning.${level}`),
+                }))}
+              />
+            )}
             {busy && !value.trim() ? (
-              <button
-                type="button"
-                className="send-button stop-button"
+              <Button
+                size="icon-sm"
+                variant="destructive"
+                className="ml-1"
                 onClick={onStop}
                 title={t('chat.stop')}
                 aria-label={t('chat.stop')}
               >
-                <Square size={15} aria-hidden="true" />
-              </button>
+                <Square className="fill-current" />
+              </Button>
             ) : (
-              <button
-                type="button"
-                className="send-button"
+              <Button
+                size="icon-sm"
+                className="send-button ml-1 transition-transform active:scale-95"
                 disabled={
-                  (!value.trim() && attachments.length === 0) ||
-                  !canSend ||
-                  sending ||
-                  uploading > 0
+                  (!value.trim() && attachments.length === 0) || !canSend || sending || uploading > 0
                 }
                 onClick={() => void submit()}
-                title={
-                  busy
-                    ? delivery === 'steer'
-                      ? t('chat.steer')
-                      : t('chat.queue')
-                    : t('chat.send')
-                }
+                title={busy ? (delivery === 'steer' ? t('chat.steer') : t('chat.queue')) : t('chat.send')}
                 aria-label={
-                  busy
-                    ? delivery === 'steer'
-                      ? t('chat.steer')
-                      : t('chat.queue')
-                    : t('chat.send')
+                  busy ? (delivery === 'steer' ? t('chat.steer') : t('chat.queue')) : t('chat.send')
                 }
               >
-                {busy ? (
-                  <ArrowUp size={16} aria-hidden="true" />
-                ) : (
-                  <Send size={15} aria-hidden="true" />
-                )}
-              </button>
+                <ArrowUp />
+              </Button>
             )}
           </div>
         </div>
         {disabledReason && (
-          <div className="composer-disabled">
+          <div className="flex items-center justify-between gap-3 border-t border-warning/25 bg-warning-soft px-4 py-2.5 text-[12.5px] text-warning">
             <span>{disabledReason}</span>
-            <button
-              type="button"
-              className="text-button"
-              onClick={onOpenSettings}
-            >
+            <Button variant="outline" size="xs" onClick={onOpenSettings}>
               {t('chat.noModelCta')}
-            </button>
-          </div>
-        )}
-        {!disabledReason && (
-          <div className="composer-hint">
-            {t('chat.draftSaved')} ·{' '}
-            {language === 'zh-CN'
-              ? 'Enter 发送 / Shift+Enter 换行'
-              : 'Enter to send / Shift+Enter for newline'}
+            </Button>
           </div>
         )}
       </div>
+      {!disabledReason && (
+        <div className="composer-hint flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-2 text-[11.5px] text-muted-foreground max-sm:hidden">
+          <span className="flex items-center gap-1.5">
+            <Kbd>Enter</Kbd> {t('chat.hint.send')}
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Kbd>Shift</Kbd>
+            <Kbd>Enter</Kbd> {t('chat.hint.newline')}
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Kbd>/</Kbd> {t('chat.hint.commands')}
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Kbd>@</Kbd> {t('chat.hint.files')}
+          </span>
+          <span className="text-subtle">{t('chat.draftSaved')}</span>
+        </div>
+      )}
       {previewAttachment && (
         <div
-          className="image-preview-backdrop"
+          className="fixed inset-0 z-[300] grid place-items-center bg-black/85 p-8 animate-in fade-in-0"
           role="dialog"
           aria-modal="true"
           onClick={() => setPreviewAttachment(null)}
         >
-          <button
-            type="button"
-            className="image-preview-close"
+          <Button
+            variant="ghost"
+            size="icon"
+            className="absolute top-4 right-4 text-white hover:bg-white/10 hover:text-white"
             onClick={() => setPreviewAttachment(null)}
             aria-label={t('app.close')}
           >
-            ×
-          </button>
-          <img src={previewAttachment.url} alt={previewAttachment.filename} />
+            <X />
+          </Button>
+          <img
+            src={previewAttachment.url}
+            alt={previewAttachment.filename}
+            className="max-h-[90vh] max-w-[96vw]"
+          />
         </div>
       )}
     </div>

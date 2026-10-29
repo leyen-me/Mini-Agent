@@ -106,6 +106,8 @@ runtime:
 | 确定性摘要 + 可选 LLM 摘要 | 只做 LLM 摘要 | 默认无额外费用、可测试；配置独立便宜模型时更连贯；压缩后可重载 AGENTS/Skill/MCP |
 | 多协议适配器 | 只支持 OpenAI Chat | 兼容 Responses/Anthropic 与 OAuth/余额；统一内部消息协议 |
 | 前端虚拟列表 | 全量渲染 | 长对话只渲染可视区；代价是 DOM 测量复杂度 |
+| Tailwind CSS v4 + shadcn/ui（Radix） | 手写全局 CSS + 原生表单控件 | 组件源码在仓库内（`src/components/ui`）可直接改成直角设计语言；Radix 提供 Select/Dialog/Menu 的键盘与读屏可访问性；颜色令牌保持十六进制，由对比度测试守护。代价是新增 Radix/cmdk 依赖与工具类长 className |
+| 右侧检查器（Inspector） | 工具详情在对话流内展开 | 对话流只保留单行工具摘要，输入/输出/Diff、目标与任务、文件、上下文用量集中在可停靠面板（≥1280px 停靠，否则抽屉） |
 
 ## 8. 可靠性与失败模式
 

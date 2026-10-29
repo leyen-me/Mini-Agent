@@ -20,6 +20,7 @@ import { PluginsPanel } from './admin/PluginsPanel';
 import { ProvidersPanel } from './admin/ProvidersPanel';
 import { SkillsPanel } from './admin/SkillsPanel';
 import { WebhooksPanel } from './admin/WebhooksPanel';
+import { SettingsShell } from '@/components/common/SettingsLayout';
 import { Modal } from './Modal';
 
 export type AdminTab =
@@ -85,36 +86,26 @@ export function AdminDialog({
       title={zh ? '管理中心' : 'Admin Center'}
       onClose={onClose}
       wide
-      className="admin-modal"
+      bodyClassName="p-0 overflow-hidden"
     >
-      <div className="admin-layout">
-        <nav
-          className="admin-tabs"
-          aria-label={zh ? '管理分类' : 'Admin sections'}
-        >
-          {TABS.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                className={tab === item.id ? 'active' : ''}
-                onClick={() => onTabChange(item.id)}
-              >
-                <Icon size={15} aria-hidden="true" />
-                <span>{zh ? item.label : item.en}</span>
-              </button>
-            );
-          })}
-          <div className="admin-tabs-meta">
-            <span>{config.models.length} models</span>
-            <span>
-              {workspaces.find((item) => item.id === activeWorkspace)?.alias ||
-                ''}
-            </span>
+      <SettingsShell
+        label={zh ? '管理分类' : 'Admin sections'}
+        items={TABS.map((item) => ({
+          id: item.id,
+          label: zh ? item.label : item.en,
+          icon: item.icon,
+        }))}
+        value={tab}
+        onChange={onTabChange}
+        footer={
+          <div className="space-y-1 px-3 font-mono text-[10.5px] text-muted-foreground">
+            <div>{config.models.length} models</div>
+            <div className="truncate">
+              {workspaces.find((item) => item.id === activeWorkspace)?.alias || ''}
+            </div>
           </div>
-        </nav>
-        <div className="admin-content">
+        }
+      >
           {tab === 'providers' && (
             <ProvidersPanel onToast={onToast} onReload={onReload} />
           )}
@@ -148,8 +139,7 @@ export function AdminDialog({
               onReload={onReload}
             />
           )}
-        </div>
-      </div>
+      </SettingsShell>
     </Modal>
   );
 }

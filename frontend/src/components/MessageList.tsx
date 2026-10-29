@@ -1,9 +1,18 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { AlertTriangle, Archive, ChevronUp, Info } from 'lucide-react';
+import {
+  AlertTriangle,
+  Archive,
+  ArrowUpLeft,
+  ChevronRight,
+  GitBranch,
+  Info,
+} from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ChatMessage, Snapshot } from '../api/types';
 import { formatTokens } from '../lib/i18n';
 import { useUi } from '../state/UiContext';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { Attachments } from './Attachments';
 import { CopyButton } from './CopyButton';
 import { Markdown } from './Markdown';
@@ -27,11 +36,18 @@ function SystemNotice({ message }: { message: ChatMessage }) {
   const Icon = isError ? AlertTriangle : Info;
   return (
     <div
-      className={`system-notice ${isError ? 'notice-warn' : ''}`}
+      className={cn(
+        'system-notice my-6 flex items-center gap-3 text-[12px] text-muted-foreground',
+        isError && 'notice-warn text-warning',
+      )}
       role="note"
     >
-      <Icon size={14} aria-hidden="true" />
-      <span>{message.content.text}</span>
+      <span className="h-px flex-1 bg-border" aria-hidden="true" />
+      <span className="flex max-w-[80%] items-center gap-2 text-center">
+        <Icon className="size-3.5 shrink-0" aria-hidden="true" />
+        <span>{message.content.text}</span>
+      </span>
+      <span className="h-px flex-1 bg-border" aria-hidden="true" />
       <span className="sr-only">{t('app.system')}</span>
     </div>
   );
@@ -41,25 +57,27 @@ function CompactionCard({ snapshot }: { snapshot: Snapshot }) {
   const { t } = useUi();
   if (!snapshot.compaction) return null;
   return (
-    <details className="compaction-card">
-      <summary>
-        <Archive size={15} aria-hidden="true" />
-        <span>{t('chat.compaction')}</span>
-        <span className="compaction-meta">
-          {t('chat.tokensBefore')}{' '}
+    <details className="compaction-card group mb-10 border border-dashed border-border-strong bg-background">
+      <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3 text-[13px] transition-colors hover:bg-accent [&::-webkit-details-marker]:hidden">
+        <Archive className="size-4 text-muted-foreground" aria-hidden="true" />
+        <span className="font-medium">{t('chat.compaction')}</span>
+        <span className="ml-auto font-mono text-[11px] text-muted-foreground tabular-nums">
           {formatTokens(snapshot.compaction.tokensBefore)} →{' '}
-          {t('chat.tokensAfter')}{' '}
           {formatTokens(snapshot.compaction.tokensAfter)}
         </span>
+        <ChevronRight
+          className="size-3.5 text-subtle transition-transform group-open:rotate-90"
+          aria-hidden="true"
+        />
       </summary>
-      <div className="compaction-body">
-        <div className="compaction-actions">
-          <span>
-            {t('chat.covered', { n: snapshot.compaction.coveredUntilSeq })}
-          </span>
+      <div className="border-t border-dashed border-border-strong px-4 py-3">
+        <div className="flex items-center justify-between text-[12px] text-muted-foreground">
+          <span>{t('chat.covered', { n: snapshot.compaction.coveredUntilSeq })}</span>
           <CopyButton text={snapshot.compaction.summary} iconOnly />
         </div>
-        <pre>{snapshot.compaction.summary}</pre>
+        <pre className="mt-2 max-h-72 overflow-auto font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-foreground/80">
+          {snapshot.compaction.summary}
+        </pre>
       </div>
     </details>
   );
@@ -124,8 +142,8 @@ export function MessageList({
     if (!message.turnId) {
       if (message.role === 'user') {
         blocks.push(
-          <div className="message-row user-row" key={message.id}>
-            <div className="message-bubble user-bubble">
+          <div className="user-row mb-10 flex justify-end" key={message.id}>
+            <div className="user-content max-w-[min(85%,620px)] border border-border bg-muted px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap">
               {message.content.text}
               <Attachments items={message.content.attachments} />
             </div>
@@ -133,7 +151,7 @@ export function MessageList({
         );
       } else if (message.role === 'assistant' && message.content.text) {
         blocks.push(
-          <div className="assistant-panel standalone" key={message.id}>
+          <div className="assistant-panel mb-10 pl-8" key={message.id}>
             <Markdown>{message.content.text}</Markdown>
           </div>,
         );
@@ -163,25 +181,30 @@ export function MessageList({
     : blocks;
   const relationBar =
     snapshot.childSessions?.length || snapshot.session.parentSessionId ? (
-      <div className="subagent-bar">
+      <div className="subagent-bar mb-8 flex flex-wrap gap-2">
         {snapshot.session.parentSessionId && (
-          <button
-            type="button"
-            className="admin-tag"
+          <Button
+            variant="outline"
+            size="xs"
             onClick={() => onSelectSession?.(snapshot.session.parentSessionId!)}
           >
-            ↑ 返回父会话
-          </button>
+            <ArrowUpLeft />
+            {t('chat.backToParent')}
+          </Button>
         )}
         {snapshot.childSessions?.map((child) => (
-          <button
-            type="button"
+          <Button
+            variant="outline"
+            size="xs"
             key={child.id}
-            className="admin-tag"
             onClick={() => onSelectSession?.(child.id)}
           >
-            子 Agent · {child.title || child.id.slice(-6)} · {child.status}
-          </button>
+            <GitBranch />
+            {child.title || child.id.slice(-6)}
+            <span className="font-mono text-[10.5px] text-muted-foreground">
+              {t(`status.${child.status}`)}
+            </span>
+          </Button>
         ))}
       </div>
     ) : null;
@@ -215,7 +238,7 @@ export function MessageList({
 
   if (virtualize) {
     return (
-      <div className="message-list message-list-virtual-wrap">
+      <div className="message-list message-list-virtual-wrap mx-auto w-full max-w-[760px]">
         {relationBar}
         <div
           className="message-list-virtual"
@@ -248,16 +271,11 @@ export function MessageList({
   }
 
   return (
-    <div className="message-list" ref={containerRef}>
+    <div className="message-list mx-auto w-full max-w-[760px]" ref={containerRef}>
       {relationBar}
       {allBlocks}
-      {snapshot.messages.length > 40 && (
-        <p className="muted small virtual-hint">
-          <ChevronUp size={13} aria-hidden="true" /> 长对话已启用虚拟滚动
-        </p>
-      )}
       {snapshot.messages.length === 0 && (
-        <p className="muted">{t('app.noSessionsHint')}</p>
+        <p className="text-muted-foreground">{t('app.noSessionsHint')}</p>
       )}
     </div>
   );

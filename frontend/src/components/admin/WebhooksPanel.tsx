@@ -4,6 +4,8 @@ import { api } from '../../api/client';
 import type { WebhookInfo } from '../../api/types';
 import type { ToastFn } from './useAdmin';
 import { runAction } from './useAdmin';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 const EMPTY = { name: '', url: '', events: 'turn.completed', secret: '' };
 
@@ -64,9 +66,9 @@ export function WebhooksPanel({ onToast }: { onToast: ToastFn }) {
                 )}
               </div>
               <div className="admin-actions">
-                <button
+                <Button
                   type="button"
-                  className="secondary-button"
+                  variant="outline" size="sm"
                   onClick={() =>
                     void runAction(
                       () => api.webhooks.test(hook.id),
@@ -78,10 +80,10 @@ export function WebhooksPanel({ onToast }: { onToast: ToastFn }) {
                   }
                 >
                   <Send size={13} /> 测试
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className="secondary-button"
+                  variant="outline" size="sm"
                   onClick={() =>
                     void runAction(
                       () =>
@@ -95,10 +97,10 @@ export function WebhooksPanel({ onToast }: { onToast: ToastFn }) {
                   }
                 >
                   {hook.enabled ? '停用' : '启用'}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className="icon-button danger"
+                  variant="ghost" size="icon-sm" className="text-muted-foreground hover:bg-danger-soft hover:text-destructive"
                   aria-label="删除 Webhook"
                   onClick={() =>
                     void runAction(
@@ -111,7 +113,7 @@ export function WebhooksPanel({ onToast }: { onToast: ToastFn }) {
                   }
                 >
                   <Trash2 size={14} />
-                </button>
+                </Button>
               </div>
             </div>
           ))}
@@ -123,7 +125,7 @@ export function WebhooksPanel({ onToast }: { onToast: ToastFn }) {
         <div className="form-grid">
           <label className="field">
             <span>名称</span>
-            <input
+            <Input
               value={form.name}
               onChange={(event) =>
                 setForm({ ...form, name: event.target.value })
@@ -132,7 +134,7 @@ export function WebhooksPanel({ onToast }: { onToast: ToastFn }) {
           </label>
           <label className="field wide">
             <span>URL</span>
-            <input
+            <Input
               value={form.url}
               onChange={(event) =>
                 setForm({ ...form, url: event.target.value })
@@ -142,7 +144,7 @@ export function WebhooksPanel({ onToast }: { onToast: ToastFn }) {
           </label>
           <label className="field">
             <span>事件（逗号分隔，* 为全部）</span>
-            <input
+            <Input
               value={form.events}
               onChange={(event) =>
                 setForm({ ...form, events: event.target.value })
@@ -151,7 +153,7 @@ export function WebhooksPanel({ onToast }: { onToast: ToastFn }) {
           </label>
           <label className="field">
             <span>签名 Secret</span>
-            <input
+            <Input
               type="password"
               value={form.secret}
               onChange={(event) =>
@@ -160,13 +162,13 @@ export function WebhooksPanel({ onToast }: { onToast: ToastFn }) {
             />
           </label>
         </div>
-        <button
+        <Button
           type="button"
-          className="primary-button"
+          size="sm"
           onClick={() => void create()}
         >
           <Plus size={14} /> 创建
-        </button>
+        </Button>
       </section>
     </div>
   );

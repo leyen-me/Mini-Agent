@@ -1,21 +1,37 @@
-import { Brain, ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 import { useUi } from '../state/UiContext';
+import { cn } from '@/lib/utils';
 
-export function ReasoningBlock({ text, streaming = false }: { text: string; streaming?: boolean }) {
+export function ReasoningBlock({
+  text,
+  streaming = false,
+}: {
+  text: string;
+  streaming?: boolean;
+}) {
   const { t } = useUi();
   const [open, setOpen] = useState(false);
   if (!text) return null;
-  const Chevron = open ? ChevronDown : ChevronRight;
   return (
-    <div className={`reasoning-block ${streaming ? 'is-streaming' : ''}`}>
-      <button type="button" className="reasoning-toggle" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
-        <Chevron size={13} aria-hidden="true" />
-        <Brain size={13} aria-hidden="true" />
-        <span>{t('chat.thinking')}</span>
-        {streaming && <span className="reasoning-pulse" aria-hidden="true" />}
+    <div className="reasoning-block">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="group inline-flex items-center gap-1.5 py-0.5 text-[12.5px] text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ChevronRight
+          className={cn('size-3.5 transition-transform duration-200', open && 'rotate-90')}
+          aria-hidden="true"
+        />
+        <span className={cn(streaming && 'text-shimmer')}>{t('chat.thinking')}</span>
       </button>
-      {open && <div className="reasoning-content">{text}</div>}
+      {open && (
+        <div className="mt-2 max-h-80 overflow-auto border-l border-border-strong py-0.5 pl-4 text-[13px] leading-relaxed whitespace-pre-wrap text-muted-foreground animate-in fade-in-0">
+          {text}
+        </div>
+      )}
     </div>
   );
 }

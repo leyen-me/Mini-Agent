@@ -1,4 +1,10 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
+
+/** Pick an option from a Radix (shadcn) Select, which renders its list in a portal. */
+async function chooseOption(page: Page, trigger: Locator, name: string) {
+  await trigger.click();
+  await page.getByRole('option', { name, exact: true }).click();
+}
 
 async function newSession(page: Page) {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -27,7 +33,8 @@ test('basic chat, file tool and final answer', async ({ page }) => {
     page.locator('.tool-card').filter({ hasText: 'list_dir' }),
   ).toBeVisible();
   await expect(
-    page.locator('.tool-status').filter({ hasText: '成功' }),
+    // The inspector mirrors each call; assert on the in-chat card.
+    page.locator('.tool-card .tool-status').filter({ hasText: '成功' }),
   ).toBeVisible();
   await expect(
     page.locator('.turn-status').filter({ hasText: '已完成' }),
@@ -54,7 +61,8 @@ test('permission confirmation allows the shell command once', async ({
     page.locator('.turn-status').filter({ hasText: '已完成' }),
   ).toBeVisible({ timeout: 20_000 });
   await expect(
-    page.locator('.tool-status').filter({ hasText: '成功' }),
+    // The inspector mirrors each call; assert on the in-chat card.
+    page.locator('.tool-card .tool-status').filter({ hasText: '成功' }),
   ).toBeVisible();
 });
 
@@ -145,15 +153,15 @@ test('settings switch language and theme, then restore', async ({ page }) => {
   await page.getByRole('button', { name: '设置', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '设置' });
   await expect(dialog).toBeVisible();
-  await dialog.getByRole('combobox').nth(0).selectOption('en-US');
+  await chooseOption(page, dialog.getByRole('combobox', { name: '界面语言' }), 'English');
   const english = page.getByRole('dialog', { name: 'Settings' });
   await expect(english).toBeVisible();
-  await english.getByRole('combobox').nth(1).selectOption('dark');
+  await chooseOption(page, english.getByRole('combobox', { name: 'Theme' }), 'Dark');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.screenshot({ path: 'test-results/settings-dark.png' });
-  await english.getByRole('combobox').nth(0).selectOption('zh-CN');
+  await chooseOption(page, english.getByRole('combobox', { name: 'Language' }), '简体中文');
   const chinese = page.getByRole('dialog', { name: '设置' });
-  await chinese.getByRole('combobox').nth(1).selectOption('system');
+  await chooseOption(page, chinese.getByRole('combobox', { name: '主题' }), '跟随系统');
   await chinese.getByRole('button', { name: '关闭' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
@@ -201,7 +209,7 @@ test('admin center opens providers and skills', async ({ page }) => {
   const admin = page.getByRole('dialog', { name: '管理中心' });
   await expect(admin).toBeVisible();
   await expect(admin).toContainText('离线 Mock 模型');
-  await admin.getByRole('button', { name: 'Skill', exact: true }).click();
+  await admin.getByRole('tab', { name: 'Skill', exact: true }).click();
   await expect(admin).toContainText('code-review');
   await page.screenshot({ path: 'test-results/admin-skills.png' });
 });
@@ -277,7 +285,11 @@ test('workspace switch moves the main view and new session into the target works
   const workspace = (await created.json()).data;
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('.composer')).toBeVisible();
-  await page.locator('.workspace-select select').selectOption(workspace.id);
+  await chooseOption(
+    page,
+    page.locator('.workspace-select').getByRole('combobox'),
+    workspace.alias || workspace.name,
+  );
   await expect(page.locator('.setup-card')).toBeVisible();
   await page.locator('.setup-card .primary-button').click();
   await expect(page.locator('.composer')).toBeVisible();
