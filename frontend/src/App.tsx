@@ -343,8 +343,9 @@ export function App() {
         setRetryNotice(t('chat.retryHint', { n: Number(event.attempt ?? 1) }));
       }
       if (event.type === 'model.fallback') {
-        setRetryNotice(String(event.message ?? '已切换备用模型'));
-        pushToast(String(event.message ?? '已切换备用模型'), 'info');
+        const message = String(event.message ?? t('chat.modelFallback'));
+        setRetryNotice(message);
+        pushToast(message, 'info');
       }
       if (event.type === 'error') {
         const message = String(event.message ?? t('app.error'));
@@ -1548,11 +1549,12 @@ function Toasts({
   toasts: Toast[];
   onDismiss: (id: number) => void;
 }) {
+  const { t } = useUi();
   return (
     <div
       className="fixed right-4 bottom-4 z-[200] flex w-[min(380px,calc(100vw-2rem))] flex-col gap-2"
       role="region"
-      aria-label="Notifications"
+      aria-label={t('app.notifications')}
     >
       {toasts.map((toast) => (
         <div
@@ -1577,7 +1579,7 @@ function Toasts({
             type="button"
             className="-mr-1 grid size-6 shrink-0 place-items-center opacity-60 transition-opacity hover:opacity-100"
             onClick={() => onDismiss(toast.id)}
-            aria-label="Dismiss"
+            aria-label={t('app.dismiss')}
           >
             <X className="size-3.5" aria-hidden="true" />
           </button>

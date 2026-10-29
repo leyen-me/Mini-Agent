@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import { useUi } from '../state/UiContext';
 
 let mermaidPromise: Promise<typeof import('mermaid').default> | null = null;
 
@@ -21,6 +22,7 @@ async function loadMermaid() {
 }
 
 export function MermaidBlock({ code }: { code: string }) {
+  const { t } = useUi();
   const rawId = useId();
   const id = `mermaid-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const [svg, setSvg] = useState('');
@@ -50,10 +52,10 @@ export function MermaidBlock({ code }: { code: string }) {
   if (error) {
     return (
       <div className="mermaid-error my-4 border border-destructive/40 bg-danger-soft p-4 text-[13px] text-destructive" role="alert">
-        <strong>Mermaid 渲染失败</strong>
+        <strong>{t('chat.mermaid.error')}</strong>
         <pre className="mt-2 font-mono text-[12px] whitespace-pre-wrap">{code}</pre>
         <details>
-          <summary>错误详情</summary>
+          <summary>{t('chat.mermaid.details')}</summary>
           <code>{error}</code>
         </details>
       </div>
@@ -68,7 +70,7 @@ export function MermaidBlock({ code }: { code: string }) {
         />
       ) : (
         <div className="mermaid-loading font-mono text-[12px] text-muted-foreground" role="status">
-          正在渲染图表…
+          {t('chat.mermaid.rendering')}
         </div>
       )}
     </div>

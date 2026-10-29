@@ -88,7 +88,7 @@ export function TurnView({
   return (
     <article
       className={cn('turn group/turn flex flex-col gap-5 pb-10 [content-visibility:auto]', running && 'turn-running')}
-      aria-label={`Turn ${turn.seq}`}
+      aria-label={t('chat.turnLabel', { seq: turn.seq })}
     >
       {userMessages.map((message) => (
         <div className="user-row group/user flex flex-col items-end gap-1" key={message.id}>

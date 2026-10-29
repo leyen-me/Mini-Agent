@@ -7,6 +7,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import { CopyButton } from './CopyButton';
 import { MermaidBlock } from './MermaidBlock';
+import { useUi } from '../state/UiContext';
 
 function nodeText(node: ReactNode): string {
   if (typeof node === 'string' || typeof node === 'number') return String(node);
@@ -17,6 +18,7 @@ function nodeText(node: ReactNode): string {
 }
 
 export function Markdown({ children }: { children: string }) {
+  const { t } = useUi();
   return (
     <div className="markdown">
       <ReactMarkdown
@@ -34,7 +36,7 @@ export function Markdown({ children }: { children: string }) {
               <div className="code-block group/code">
                 <CopyButton
                   text={text}
-                  label="Copy code"
+                  label={t('app.copyCode')}
                   iconOnly
                   className="absolute top-2 right-2 bg-white/5 text-neutral-400 opacity-0 group-hover/code:opacity-100 hover:bg-white/15 hover:text-white focus-visible:opacity-100"
                 />

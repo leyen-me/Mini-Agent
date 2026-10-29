@@ -402,9 +402,7 @@ function TasksPanel({
               <div className="flex items-center gap-2">
                 <span className="min-w-0 flex-1 truncate font-mono text-[12.5px]">{task.name}</span>
                 <span className={cn('font-mono text-[11px]', taskTone[task.status])}>
-                  {task.status === 'queued' || task.status === 'running'
-                    ? t('chat.task.running')
-                    : t(`chat.task.${task.status}`)}
+                  {t(`chat.task.${task.status}`)}
                 </span>
               </div>
               {(task.status === 'running' || task.status === 'queued') && (

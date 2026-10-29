@@ -61,6 +61,10 @@ export function Root() {
     return () => media.removeEventListener('change', handler);
   }, [themeSetting]);
 
+  useEffect(() => {
+    document.documentElement.lang = language;
+  }, [language]);
+
   const setLanguage = (next: Language) => {
     setLanguageState(next);
     try {
