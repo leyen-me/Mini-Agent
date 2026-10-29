@@ -2,11 +2,16 @@ services:
   mini-agent:
     build: .
     ports:
-      - "8787:8787"
+      # 默认仅本机可访问；远程部署请通过 HTTPS 反向代理并设置 API Token。
+      - "127.0.0.1:8787:8787"
     environment:
       MINI_AGENT_DATA_DIR: /data
       MINI_AGENT_HOST: 0.0.0.0
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      MINI_AGENT_API_TOKEN: ${MINI_AGENT_API_TOKEN:-}
     volumes:
-      - ./data:/data
+      - mini-agent-data:/data
     restart: unless-stopped
+
+volumes:
+  mini-agent-data:

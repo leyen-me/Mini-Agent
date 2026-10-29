@@ -1,0 +1,43 @@
+# Enterprise policy example.
+# Copy to config/policy.yaml (or set MINI_AGENT_POLICY) to enforce a highest-precedence layer.
+# Policy is applied after user settings and therefore cannot be relaxed from the UI.
+permissions:
+  write:
+    default: ask
+    allow: []
+    deny:
+      - "*/.env"
+      - "*secrets*"
+  shell:
+    default: ask
+    allow:
+      - "git status"
+      - "git diff *"
+      - "pnpm test*"
+      - "uv run pytest*"
+    deny:
+      - "git push *"
+      - "rm -rf *"
+      - "curl *"
+  network:
+    default: ask
+    allow: []
+    deny: []
+
+budget:
+  maxStepsPerTurn: 40
+  maxDurationSeconds: 600
+  maxCostPerTurn: 2.0
+  maxRepeatFailures: 3
+
+sandbox:
+  mode: auto
+  allowNetwork: false
+
+security:
+  blockPrivateNetwork: true
+  maxUploadMb: 20
+
+api:
+  requireTokenRemote: true
+  rateLimitPerMinute: 300

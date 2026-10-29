@@ -170,6 +170,8 @@ RISK_BY_CATEGORY = {
     "interaction": "low",
     "task": "low",
     "subagent": "high",
+    "mcp": "medium",
+    "plugin": "high",
 }
 
 DANGEROUS_SHELL = [
@@ -193,8 +195,9 @@ class PermissionEvaluator:
         resource: str,
         plan_mode: bool,
         grants: list[tuple[str, str]] | None = None,
+        category_override: str | None = None,
     ) -> PermissionDecision:
-        category = TOOL_CATEGORY.get(tool, "shell")
+        category = category_override or TOOL_CATEGORY.get(tool, "shell")
         risk = RISK_BY_CATEGORY.get(category, "medium")
         rule = self.category_rule(category)
         if rule is None:
@@ -213,11 +216,13 @@ class PermissionEvaluator:
         else:
             action = _evaluate_rule(rule, resource)
 
-        if plan_mode and category in {"write", "shell", "subagent"}:
+        if plan_mode and category in {"write", "shell", "subagent", "mcp", "plugin"}:
             return PermissionDecision("deny", risk, category, resource, "Plan 模式只读，禁止修改或执行命令")
-        if category in {"write", "shell", "network", "subagent"} and action == "ask":
+        if category in {"write", "shell", "network", "subagent", "mcp", "plugin"} and action == "ask":
             for granted_tool, pattern in grants or []:
-                if granted_tool == tool and _matches(resource, [pattern]):
+                # Grants are exact approvals. Treating them as glob patterns
+                # lets `ls *` authorize `ls * ; curl ...` after one approval.
+                if granted_tool == tool and resource == pattern:
                     return PermissionDecision("allow", risk, category, resource, "已命中「始终允许」规则")
         return PermissionDecision(action, risk, category, resource, self._reason(action, category))
 

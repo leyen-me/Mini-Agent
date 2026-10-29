@@ -21,7 +21,14 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { api } from '../api/client';
-import type { FileEntry, PublicConfig, QueueItem, Session } from '../api/types';
+import type {
+  Attachment,
+  CommandInfo,
+  FileEntry,
+  PublicConfig,
+  QueueItem,
+  Session,
+} from '../api/types';
 import { clearDraft, loadDraft, saveDraft } from '../lib/draft';
 import { useUi } from '../state/UiContext';
 import { QueuePanel } from './QueuePanel';
@@ -30,6 +37,7 @@ interface SlashCommand {
   command: string;
   label: string;
   hint: string;
+  custom?: CommandInfo;
 }
 
 interface Props {
@@ -37,7 +45,13 @@ interface Props {
   config: PublicConfig;
   queue: QueueItem[];
   busy: boolean;
-  onSend: (content: string, mode: 'auto' | 'steer' | 'queue') => Promise<void>;
+  onSend: (
+    content: string,
+    mode: 'auto' | 'steer' | 'queue',
+    attachmentIds?: string[],
+  ) => Promise<void>;
+  commands?: CommandInfo[];
+  onPreviewCommand?: (command: CommandInfo, initialArgs?: string) => void;
   onStop: () => void;
   onModeChange: (mode: 'build' | 'plan') => Promise<void>;
   onModelChange: (model: string, reasoning: string) => Promise<void>;
@@ -48,7 +62,10 @@ interface Props {
   onOpenSettings: () => void;
   onShowHelp: () => void;
   onToast: (message: string, kind?: 'info' | 'error' | 'success') => void;
-  onUpdateQueue: (id: string, body: { content?: string; mode?: 'steer' | 'queue' }) => Promise<void>;
+  onUpdateQueue: (
+    id: string,
+    body: { content?: string; mode?: 'steer' | 'queue' },
+  ) => Promise<void>;
   onDeleteQueue: (id: string) => Promise<void>;
   disabledReason?: string | null;
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
@@ -62,6 +79,8 @@ export function Composer({
   queue,
   busy,
   onSend,
+  commands = [],
+  onPreviewCommand,
   onStop,
   onModeChange,
   onModelChange,
@@ -85,9 +104,15 @@ export function Composer({
   const [menu, setMenu] = useState<'slash' | 'files' | null>(null);
   const [menuIndex, setMenuIndex] = useState(0);
   const [files, setFiles] = useState<FileEntry[] | null>(null);
+  const [fileMatches, setFileMatches] = useState<FileEntry[] | null>(null);
   const [delivery, setDelivery] = useState<'queue' | 'steer'>('queue');
   const [sending, setSending] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [uploading, setUploading] = useState(0);
+  const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(
+    null,
+  );
   const localRef = useRef<HTMLTextAreaElement>(null);
   const ref = textareaRef ?? localRef;
   const menuRef = useRef<HTMLDivElement>(null);
@@ -97,6 +122,7 @@ export function Composer({
 
   useEffect(() => {
     setValue(loadDraft(sessionId));
+    setAttachments([]);
     setMenu(null);
   }, [sessionId]);
 
@@ -106,7 +132,10 @@ export function Composer({
 
   useEffect(() => {
     if (!pendingReference) return;
-    setValue((current) => `${current}${current && !current.endsWith(' ') ? ' ' : ''}@${pendingReference.path} `);
+    setValue(
+      (current) =>
+        `${current}${current && !current.endsWith(' ') ? ' ' : ''}@${pendingReference.path} `,
+    );
     onReferenceConsumed?.();
     ref.current?.focus();
   }, [pendingReference, onReferenceConsumed, ref]);
@@ -124,7 +153,8 @@ export function Composer({
     api
       .files(session.workspaceId, '.')
       .then((listing) => {
-        if (!cancelled) setFiles(listing.entries.filter((entry) => entry.type === 'file'));
+        if (!cancelled)
+          setFiles(listing.entries.filter((entry) => entry.type === 'file'));
       })
       .catch(() => {
         if (!cancelled) setFiles([]);
@@ -137,7 +167,8 @@ export function Composer({
   useEffect(() => {
     if (!menu) return;
     const handler = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setMenu(null);
+      if (menuRef.current && !menuRef.current.contains(event.target as Node))
+        setMenu(null);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -145,19 +176,52 @@ export function Composer({
 
   const slashCommands: SlashCommand[] = useMemo(
     () => [
-      { command: '/compact', label: t('chat.compactNow'), hint: t('chat.compaction') },
-      { command: '/export', label: t('chat.exportJson'), hint: t('chat.export') },
-      { command: '/new', label: t('app.newSession'), hint: t('palette.newSession') },
-      { command: '/model', label: t('chat.model'), hint: t('settings.models.default') },
-      { command: '/agent', label: t('chat.mode.plan'), hint: t('chat.mode.build') },
-      { command: '/goal', label: t('chat.goal.set'), hint: t('chat.goal.title') },
+      {
+        command: '/compact',
+        label: t('chat.compactNow'),
+        hint: t('chat.compaction'),
+      },
+      {
+        command: '/export',
+        label: t('chat.exportJson'),
+        hint: t('chat.export'),
+      },
+      {
+        command: '/new',
+        label: t('app.newSession'),
+        hint: t('palette.newSession'),
+      },
+      {
+        command: '/model',
+        label: t('chat.model'),
+        hint: t('settings.models.default'),
+      },
+      {
+        command: '/agent',
+        label: t('chat.mode.plan'),
+        hint: t('chat.mode.build'),
+      },
+      {
+        command: '/goal',
+        label: t('chat.goal.set'),
+        hint: t('chat.goal.title'),
+      },
       { command: '/help', label: t('app.shortcuts'), hint: t('palette.hint') },
+      ...commands.map((item) => ({
+        command: `/${item.name}`,
+        label: item.description || item.name,
+        hint: item.scope.startsWith('plugin:')
+          ? item.scope
+          : t('chat.customCommand'),
+        custom: item,
+      })),
     ],
-    [t],
+    [commands, t],
   );
 
   const currentQuery = useMemo(() => {
-    if (!value.startsWith('/') || value.includes('\n') || value.includes(' ')) return null;
+    if (!value.startsWith('/') || value.includes('\n') || value.includes(' '))
+      return null;
     return value.slice(1).toLowerCase();
   }, [value]);
 
@@ -166,6 +230,36 @@ export function Composer({
     if (!match) return null;
     return match[1].toLowerCase();
   }, [value]);
+
+  useEffect(() => {
+    if (!fileQuery || !session) {
+      setFileMatches(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      api.workspacesApi
+        .search(session.workspaceId, fileQuery, 'name')
+        .then((result) => {
+          if (cancelled) return;
+          setFileMatches(
+            result.results.slice(0, 50).map((item) => ({
+              name: item.path.split('/').pop() ?? item.path,
+              path: item.path,
+              type: 'file' as const,
+              size: null,
+            })),
+          );
+        })
+        .catch(() => {
+          if (!cancelled) setFileMatches([]);
+        });
+    }, 180);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [fileQuery, session]);
 
   useEffect(() => {
     if (currentQuery !== null) {
@@ -182,33 +276,62 @@ export function Composer({
   const filteredCommands = slashCommands.filter(
     (item) => !currentQuery || item.command.slice(1).includes(currentQuery),
   );
-  const filteredFiles = (files ?? []).filter(
-    (file) => !fileQuery || file.path.toLowerCase().includes(fileQuery) || file.name.toLowerCase().includes(fileQuery),
+  const filteredFiles = fileQuery
+    ? (fileMatches ?? [])
+    : (files ?? []).filter(
+        (file) =>
+          !fileQuery ||
+          file.path.toLowerCase().includes(fileQuery) ||
+          file.name.toLowerCase().includes(fileQuery),
+      );
+  const canSend = Boolean(
+    session && config.model_configured && !disabledReason,
   );
-  const canSend = Boolean(session && config.model_configured && !disabledReason);
 
   const insertFile = (file: FileEntry) => {
-    const next = value.replace(/(?:^|\s)@([^\s@]*)$/, (match) => `${match.startsWith(' ') ? ' ' : ''}@${file.path} `);
+    const next = value.replace(
+      /(?:^|\s)@([^\s@]*)$/,
+      (match) => `${match.startsWith(' ') ? ' ' : ''}@${file.path} `,
+    );
     setValue(next);
     setMenu(null);
     ref.current?.focus();
   };
 
-  const runCommand = (command: string) => {
+  const runCommand = (command: string, custom?: CommandInfo) => {
     setMenu(null);
+    if (custom) {
+      setValue('');
+      onPreviewCommand?.(custom);
+      return;
+    }
     setValue('');
     if (command === '/compact') onCompact();
     else if (command === '/export') onExport();
     else if (command === '/new') onNew();
     else if (command === '/model') onOpenSettings();
-    else if (command === '/agent') void onModeChange(session?.mode === 'plan' ? 'build' : 'plan');
+    else if (command === '/agent')
+      void onModeChange(session?.mode === 'plan' ? 'build' : 'plan');
     else if (command === '/goal') onOpenGoal();
     else if (command === '/help') onShowHelp();
   };
 
   const submit = async (mode: 'auto' | 'steer' | 'queue' = 'auto') => {
     const content = value.trim();
-    if (!content || !canSend || sending) return;
+    if ((!content && attachments.length === 0) || !canSend || sending) return;
+    if (content.startsWith('/')) {
+      const command = commands.find(
+        (item) =>
+          content === `/${item.name}` || content.startsWith(`/${item.name} `),
+      );
+      if (command) {
+        onPreviewCommand?.(
+          command,
+          content.slice(command.name.length + 1).trim(),
+        );
+        return;
+      }
+    }
     setSending(true);
     // Clear before the request: when the first message flips the empty layout, the
     // composer is remounted and must not restore a stale draft while the request is
@@ -216,7 +339,16 @@ export function Composer({
     setValue('');
     clearDraft(sessionId);
     try {
-      await onSend(content, busy ? delivery : mode);
+      if (attachments.length) {
+        await onSend(
+          content,
+          busy ? delivery : mode,
+          attachments.map((item) => item.id),
+        );
+      } else {
+        await onSend(content, busy ? delivery : mode);
+      }
+      setAttachments([]);
     } catch {
       setValue(content);
       saveDraft(sessionId, content);
@@ -227,7 +359,10 @@ export function Composer({
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    const native = event.nativeEvent as KeyboardEvent['nativeEvent'] & { isComposing?: boolean; keyCode?: number };
+    const native = event.nativeEvent as KeyboardEvent['nativeEvent'] & {
+      isComposing?: boolean;
+      keyCode?: number;
+    };
     if (menu) {
       const items = menu === 'slash' ? filteredCommands : filteredFiles;
       if (event.key === 'ArrowDown') {
@@ -242,8 +377,12 @@ export function Composer({
       }
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
-        if (menu === 'slash' && items[menuIndex]) runCommand((items[menuIndex] as SlashCommand).command);
-        if (menu === 'files' && items[menuIndex]) insertFile(items[menuIndex] as FileEntry);
+        if (menu === 'slash' && items[menuIndex]) {
+          const item = items[menuIndex] as SlashCommand;
+          runCommand(item.command, item.custom);
+        }
+        if (menu === 'files' && items[menuIndex])
+          insertFile(items[menuIndex] as FileEntry);
         return;
       }
       if (event.key === 'Escape') {
@@ -253,7 +392,11 @@ export function Composer({
       }
     }
     if (event.key === 'Enter' && !event.shiftKey) {
-      if (composingRef.current || native.isComposing || native.keyCode === 229) {
+      if (
+        composingRef.current ||
+        native.isComposing ||
+        native.keyCode === 229
+      ) {
         return;
       }
       event.preventDefault();
@@ -261,42 +404,55 @@ export function Composer({
     }
   };
 
-  const attachFile = async (file: File) => {
-    if (file.size > 1_000_000) {
-      onToast(t('chat.attachUnsupported'), 'error');
-      return;
-    }
-    try {
-      const text = await file.text();
-      if (text.includes('\u0000')) {
-        onToast(t('chat.attachUnsupported'), 'error');
-        return;
+  const uploadFiles = async (files: File[]) => {
+    if (!files.length) return;
+    setUploading((count) => count + files.length);
+    const uploaded: Attachment[] = [];
+    for (const file of files) {
+      try {
+        const attachment = await api.upload(file, sessionId ?? undefined);
+        uploaded.push(attachment);
+      } catch (error) {
+        onToast(
+          error instanceof Error ? error.message : t('chat.attachUnsupported'),
+          'error',
+        );
+      } finally {
+        setUploading((count) => Math.max(0, count - 1));
       }
-      const block = `\n\n--- ${file.name} ---\n\`\`\`\n${text}\n\`\`\``;
-      setValue((current) => current + block);
-      onToast(t('chat.attached', { name: file.name }), 'success');
-    } catch {
-      onToast(t('chat.attachUnsupported'), 'error');
+    }
+    if (uploaded.length) {
+      setAttachments((current) => [...current, ...uploaded]);
+      onToast(
+        t('chat.attached', {
+          name: uploaded.map((item) => item.filename).join(', '),
+        }),
+        'success',
+      );
     }
   };
 
   const onFileInput = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) void attachFile(file);
+    void uploadFiles(Array.from(event.target.files ?? []));
     event.target.value = '';
   };
 
   const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-    if (Array.from(event.clipboardData.files).some((file) => file.type.startsWith('image/'))) {
-      onToast(t('chat.pasteUnsupported'), 'error');
+    const files = Array.from(event.clipboardData.files);
+    if (files.length) {
+      event.preventDefault();
+      void uploadFiles(files);
     }
   };
 
   const onDrop = (event: DragEvent<HTMLTextAreaElement>) => {
     event.preventDefault();
     setDragging(false);
-    const file = event.dataTransfer.files?.[0];
-    if (file) void attachFile(file);
+    void uploadFiles(Array.from(event.dataTransfer.files ?? []));
+  };
+
+  const removeAttachment = (id: string) => {
+    setAttachments((current) => current.filter((item) => item.id !== id));
   };
 
   const models = config.models;
@@ -305,12 +461,25 @@ export function Composer({
 
   return (
     <div className="composer-shell">
-      <QueuePanel items={queue} onUpdate={onUpdateQueue} onDelete={onDeleteQueue} />
+      <QueuePanel
+        items={queue}
+        onUpdate={onUpdateQueue}
+        onDelete={onDeleteQueue}
+      />
       <div className={`composer ${dragging ? 'is-dragging' : ''}`}>
         {menu === 'slash' && (
-          <div className="composer-menu" ref={menuRef} role="listbox" aria-label={t('chat.slash')}>
+          <div
+            className="composer-menu"
+            ref={menuRef}
+            role="listbox"
+            aria-label={t('chat.slash')}
+          >
             <div className="composer-menu-label">{t('chat.slash')}</div>
-            {filteredCommands.length === 0 && <div className="composer-menu-empty">{t('palette.noResults')}</div>}
+            {filteredCommands.length === 0 && (
+              <div className="composer-menu-empty">
+                {t('palette.noResults')}
+              </div>
+            )}
             {filteredCommands.map((item, index) => (
               <button
                 type="button"
@@ -319,7 +488,7 @@ export function Composer({
                 role="option"
                 aria-selected={index === menuIndex}
                 onMouseEnter={() => setMenuIndex(index)}
-                onClick={() => runCommand(item.command)}
+                onClick={() => runCommand(item.command, item.custom)}
               >
                 <Slash size={14} aria-hidden="true" />
                 <span className="menu-command">{item.command}</span>
@@ -329,11 +498,18 @@ export function Composer({
           </div>
         )}
         {menu === 'files' && (
-          <div className="composer-menu" ref={menuRef} role="listbox" aria-label={t('chat.files')}>
+          <div
+            className="composer-menu"
+            ref={menuRef}
+            role="listbox"
+            aria-label={t('chat.files')}
+          >
             <div className="composer-menu-label">
               <AtSign size={13} aria-hidden="true" /> {t('chat.files')}
             </div>
-            {!files && <div className="composer-menu-empty">{t('app.loading')}…</div>}
+            {!files && (
+              <div className="composer-menu-empty">{t('app.loading')}…</div>
+            )}
             {files && filteredFiles.length === 0 && (
               <div className="composer-menu-empty">{t('chat.noFiles')}</div>
             )}
@@ -353,11 +529,52 @@ export function Composer({
             ))}
           </div>
         )}
+        {(attachments.length > 0 || uploading > 0) && (
+          <div className="attachment-strip" aria-label={t('chat.attachments')}>
+            {attachments.map((attachment) => (
+              <div className="attachment-chip" key={attachment.id}>
+                {attachment.kind === 'image' ? (
+                  <button
+                    type="button"
+                    className="attachment-thumb"
+                    onClick={() => setPreviewAttachment(attachment)}
+                    title={attachment.filename}
+                  >
+                    <img src={attachment.url} alt={attachment.filename} />
+                  </button>
+                ) : (
+                  <a
+                    className="attachment-file"
+                    href={attachment.url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <FileText size={15} aria-hidden="true" />
+                    <span>{attachment.filename}</span>
+                  </a>
+                )}
+                <button
+                  type="button"
+                  className="attachment-remove"
+                  onClick={() => removeAttachment(attachment.id)}
+                  aria-label={`${t('app.remove')} ${attachment.filename}`}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            {uploading > 0 && <div className="attachment-uploading">…</div>}
+          </div>
+        )}
         <textarea
           ref={ref}
           value={value}
           rows={1}
-          placeholder={busy ? t('chat.composer.placeholderRunning') : t('chat.composer.placeholder')}
+          placeholder={
+            busy
+              ? t('chat.composer.placeholderRunning')
+              : t('chat.composer.placeholder')
+          }
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={onKeyDown}
           onCompositionStart={() => {
@@ -379,7 +596,14 @@ export function Composer({
         {dragging && <div className="drop-overlay">{t('chat.upload')}</div>}
         <div className="composer-toolbar">
           <div className="composer-toolbar-left">
-            <input ref={fileInputRef} type="file" hidden onChange={onFileInput} accept="text/*,.md,.json,.yaml,.yml,.py,.ts,.tsx,.js,.css,.html,.txt" />
+            <input
+              ref={fileInputRef}
+              type="file"
+              hidden
+              multiple
+              onChange={onFileInput}
+              accept="image/*,.pdf,.md,.json,.yaml,.yml,.py,.ts,.tsx,.js,.css,.html,.txt"
+            />
             <button
               type="button"
               className="icon-button"
@@ -395,14 +619,21 @@ export function Composer({
               title={t('chat.files')}
               aria-label={t('chat.files')}
               onClick={() => {
-                setValue((current) => `${current}${current.endsWith(' ') || !current ? '' : ' '}@`);
+                setValue(
+                  (current) =>
+                    `${current}${current.endsWith(' ') || !current ? '' : ' '}@`,
+                );
                 setFiles(null);
                 ref.current?.focus();
               }}
             >
               <AtSign size={16} aria-hidden="true" />
             </button>
-            <div className="mode-switch" role="group" aria-label={t('app.agent')}>
+            <div
+              className="mode-switch"
+              role="group"
+              aria-label={t('app.agent')}
+            >
               <button
                 type="button"
                 className={session?.mode !== 'plan' ? 'active' : ''}
@@ -423,7 +654,11 @@ export function Composer({
           </div>
           <div className="composer-toolbar-right">
             {busy && (
-              <div className="delivery-switch" role="group" aria-label={t('chat.queue')}>
+              <div
+                className="delivery-switch"
+                role="group"
+                aria-label={t('chat.queue')}
+              >
                 <button
                   type="button"
                   className={delivery === 'queue' ? 'active' : ''}
@@ -449,10 +684,16 @@ export function Composer({
                 disabled={!session || models.length === 0}
                 aria-label={t('chat.model')}
                 onChange={(event) => {
-                  const next = models.find((model) => model.ref === event.target.value);
-                  const reasoning = next?.reasoning_levels.includes(session?.reasoningLevel ?? '')
-                    ? session?.reasoningLevel ?? next.reasoning_levels[0] ?? 'off'
-                    : next?.reasoning_levels[0] ?? 'off';
+                  const next = models.find(
+                    (model) => model.ref === event.target.value,
+                  );
+                  const reasoning = next?.reasoning_levels.includes(
+                    session?.reasoningLevel ?? '',
+                  )
+                    ? (session?.reasoningLevel ??
+                      next.reasoning_levels[0] ??
+                      'off')
+                    : (next?.reasoning_levels[0] ?? 'off');
                   void onModelChange(event.target.value, reasoning);
                 }}
               >
@@ -471,7 +712,8 @@ export function Composer({
                 disabled={!session || reasoningLevels.length <= 1}
                 aria-label={t('chat.reasoning')}
                 onChange={(event) =>
-                  session && void onModelChange(session.model, event.target.value)
+                  session &&
+                  void onModelChange(session.model, event.target.value)
                 }
               >
                 {reasoningLevels.map((level) => (
@@ -496,12 +738,33 @@ export function Composer({
               <button
                 type="button"
                 className="send-button"
-                disabled={!value.trim() || !canSend || sending}
+                disabled={
+                  (!value.trim() && attachments.length === 0) ||
+                  !canSend ||
+                  sending ||
+                  uploading > 0
+                }
                 onClick={() => void submit()}
-                title={busy ? (delivery === 'steer' ? t('chat.steer') : t('chat.queue')) : t('chat.send')}
-                aria-label={busy ? (delivery === 'steer' ? t('chat.steer') : t('chat.queue')) : t('chat.send')}
+                title={
+                  busy
+                    ? delivery === 'steer'
+                      ? t('chat.steer')
+                      : t('chat.queue')
+                    : t('chat.send')
+                }
+                aria-label={
+                  busy
+                    ? delivery === 'steer'
+                      ? t('chat.steer')
+                      : t('chat.queue')
+                    : t('chat.send')
+                }
               >
-                {busy ? <ArrowUp size={16} aria-hidden="true" /> : <Send size={15} aria-hidden="true" />}
+                {busy ? (
+                  <ArrowUp size={16} aria-hidden="true" />
+                ) : (
+                  <Send size={15} aria-hidden="true" />
+                )}
               </button>
             )}
           </div>
@@ -509,13 +772,42 @@ export function Composer({
         {disabledReason && (
           <div className="composer-disabled">
             <span>{disabledReason}</span>
-            <button type="button" className="text-button" onClick={onOpenSettings}>
+            <button
+              type="button"
+              className="text-button"
+              onClick={onOpenSettings}
+            >
               {t('chat.noModelCta')}
             </button>
           </div>
         )}
-        {!disabledReason && <div className="composer-hint">{t('chat.draftSaved')} · {language === 'zh-CN' ? 'Enter 发送 / Shift+Enter 换行' : 'Enter to send / Shift+Enter for newline'}</div>}
+        {!disabledReason && (
+          <div className="composer-hint">
+            {t('chat.draftSaved')} ·{' '}
+            {language === 'zh-CN'
+              ? 'Enter 发送 / Shift+Enter 换行'
+              : 'Enter to send / Shift+Enter for newline'}
+          </div>
+        )}
       </div>
+      {previewAttachment && (
+        <div
+          className="image-preview-backdrop"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setPreviewAttachment(null)}
+        >
+          <button
+            type="button"
+            className="image-preview-close"
+            onClick={() => setPreviewAttachment(null)}
+            aria-label={t('app.close')}
+          >
+            ×
+          </button>
+          <img src={previewAttachment.url} alt={previewAttachment.filename} />
+        </div>
+      )}
     </div>
   );
 }

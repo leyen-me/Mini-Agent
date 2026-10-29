@@ -1,4 +1,5 @@
 import type { StreamEvent, StreamStatus } from '../api/types';
+import { currentApiToken } from './client';
 
 export interface ParsedSse {
   id: number | null;
@@ -37,7 +38,8 @@ function parseFrame(raw: string): ParsedSse | null {
     if (!line || line.startsWith(':')) continue;
     const separator = line.indexOf(':');
     const field = separator === -1 ? line : line.slice(0, separator);
-    const value = separator === -1 ? '' : line.slice(separator + 1).replace(/^ /, '');
+    const value =
+      separator === -1 ? '' : line.slice(separator + 1).replace(/^ /, '');
     if (field === 'id') {
       const parsed = Number.parseInt(value, 10);
       id = Number.isFinite(parsed) ? parsed : null;
@@ -50,6 +52,10 @@ function parseFrame(raw: string): ParsedSse | null {
   if (!data.length) return null;
   return { id, event, data: data.join('\n') };
 }
+
+const SSE_BASE = (
+  (import.meta.env.VITE_API_BASE as string | undefined) ?? '/api/v1'
+).replace(/\/$/, '');
 
 interface StreamOptions {
   sessionId: string;
@@ -78,8 +84,12 @@ export function startSessionStream(options: StreamOptions): () => void {
           // The next loop retries; the snapshot refresh is best-effort.
         }
         if (closed) return;
-        const delay = Math.min(15_000, 1_000 * 2 ** Math.min(attempt - 1, 4)) + Math.random() * 250;
-        options.onStatus(navigator.onLine === false ? 'offline' : 'reconnecting');
+        const delay =
+          Math.min(15_000, 1_000 * 2 ** Math.min(attempt - 1, 4)) +
+          Math.random() * 250;
+        options.onStatus(
+          navigator.onLine === false ? 'offline' : 'reconnecting',
+        );
         try {
           await wait(delay, controller.signal);
         } catch {
@@ -91,11 +101,19 @@ export function startSessionStream(options: StreamOptions): () => void {
       try {
         const headers: Record<string, string> = { Accept: 'text/event-stream' };
         if (lastEventId > 0) headers['Last-Event-ID'] = String(lastEventId);
-        const response = await fetch(`/api/v1/sessions/${options.sessionId}/events`, {
-          headers,
-          signal: controller.signal,
-          cache: 'no-store',
-        });
+        const response = await fetch(
+          `${SSE_BASE}/sessions/${options.sessionId}/events`,
+          {
+            headers: {
+              ...headers,
+              ...(currentApiToken()
+                ? { Authorization: `Bearer ${currentApiToken()}` }
+                : {}),
+            },
+            signal: controller.signal,
+            cache: 'no-store',
+          },
+        );
         if (response.status === 404) {
           options.onFatal?.('会话不存在或已被删除');
           return;
@@ -111,7 +129,9 @@ export function startSessionStream(options: StreamOptions): () => void {
         while (!closed) {
           const { done, value } = await reader.read();
           if (done) break;
-          for (const frame of parser.push(decoder.decode(value, { stream: true }))) {
+          for (const frame of parser.push(
+            decoder.decode(value, { stream: true }),
+          )) {
             if (frame.id !== null && frame.id <= lastEventId) continue;
             let payload: StreamEvent;
             try {
@@ -124,7 +144,10 @@ export function startSessionStream(options: StreamOptions): () => void {
             } else if (typeof payload.id === 'number') {
               lastEventId = payload.id;
             }
-            options.onEvent({ ...payload, type: (payload.type as string) || frame.event });
+            options.onEvent({
+              ...payload,
+              type: (payload.type as string) || frame.event,
+            });
           }
         }
         if (!closed) {
@@ -134,7 +157,9 @@ export function startSessionStream(options: StreamOptions): () => void {
         if (closed || controller.signal.aborted) return;
         if ((error as Error).name === 'AbortError') return;
         attempt += 1;
-        options.onStatus(navigator.onLine === false ? 'offline' : 'reconnecting');
+        options.onStatus(
+          navigator.onLine === false ? 'offline' : 'reconnecting',
+        );
       }
     }
   };

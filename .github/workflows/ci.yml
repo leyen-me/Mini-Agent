@@ -44,3 +44,28 @@ jobs:
           pnpm lint
           pnpm test
           pnpm build
+
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.13'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install
+        run: |
+          cd backend && uv sync --all-groups
+          cd ../frontend && pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: cd frontend && pnpm exec playwright install --with-deps chromium
+      - name: Playwright
+        run: cd frontend && pnpm e2e

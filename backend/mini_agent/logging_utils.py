@@ -7,6 +7,8 @@ import json
 import logging
 import sys
 from datetime import UTC, datetime
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Any
 
 from .security import redact_text
@@ -16,13 +18,30 @@ session_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("session_id
 _secrets: list[str] = []
 
 
-def configure_logging(level: str = "INFO", secrets: list[str] | None = None) -> None:
+def configure_logging(
+    level: str = "INFO", secrets: list[str] | None = None, log_dir: Path | None = None
+) -> None:
     global _secrets
     _secrets = [value for value in (secrets or []) if value]
+    formatter = JsonFormatter()
     handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(JsonFormatter())
+    handler.setFormatter(formatter)
+    handlers: list[logging.Handler] = [handler]
+    if log_dir is not None:
+        try:
+            log_dir.mkdir(parents=True, exist_ok=True)
+            file_handler = RotatingFileHandler(
+                log_dir / "app.log",
+                maxBytes=10 * 1024 * 1024,
+                backupCount=5,
+                encoding="utf-8",
+            )
+            file_handler.setFormatter(formatter)
+            handlers.append(file_handler)
+        except OSError:
+            pass
     root = logging.getLogger()
-    root.handlers = [handler]
+    root.handlers = handlers
     root.setLevel(level.upper())
     for noisy in ("uvicorn.access", "httpx", "httpcore"):
         logging.getLogger(noisy).setLevel("WARNING")

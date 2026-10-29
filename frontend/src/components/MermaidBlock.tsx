@@ -1,0 +1,76 @@
+import { useEffect, useId, useRef, useState } from 'react';
+
+let mermaidPromise: Promise<typeof import('mermaid').default> | null = null;
+
+async function loadMermaid() {
+  if (!mermaidPromise) {
+    mermaidPromise = import('mermaid').then((module) => {
+      module.default.initialize({
+        startOnLoad: false,
+        securityLevel: 'strict',
+        theme:
+          document.documentElement.dataset.theme === 'light'
+            ? 'default'
+            : 'dark',
+        fontFamily: 'inherit',
+      });
+      return module.default;
+    });
+  }
+  return mermaidPromise;
+}
+
+export function MermaidBlock({ code }: { code: string }) {
+  const rawId = useId();
+  const id = `mermaid-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  const [svg, setSvg] = useState('');
+  const [error, setError] = useState('');
+  const container = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const node = container.current;
+    let cancelled = false;
+    setError('');
+    setSvg('');
+    loadMermaid()
+      .then((mermaid) => mermaid.render(id, code))
+      .then((result) => {
+        if (!cancelled) setSvg(result.svg);
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled)
+          setError(reason instanceof Error ? reason.message : String(reason));
+      });
+    return () => {
+      cancelled = true;
+      if (node) node.innerHTML = '';
+    };
+  }, [code, id]);
+
+  if (error) {
+    return (
+      <div className="mermaid-error" role="alert">
+        <strong>Mermaid 渲染失败</strong>
+        <pre>{code}</pre>
+        <details>
+          <summary>错误详情</summary>
+          <code>{error}</code>
+        </details>
+      </div>
+    );
+  }
+  return (
+    <div className="mermaid-block" ref={container}>
+      {svg ? (
+        <div
+          className="mermaid-svg"
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      ) : (
+        <div className="mermaid-loading" role="status">
+          正在渲染图表…
+        </div>
+      )}
+    </div>
+  );
+}

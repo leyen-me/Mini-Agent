@@ -250,6 +250,7 @@ async def compact_session(
     session_id: str,
     *,
     keep_recent_tokens: int | None = None,
+    summary_override: str | None = None,
 ) -> Compaction:
     session = await db.get(Session, session_id)
     if session is None:
@@ -268,7 +269,7 @@ async def compact_session(
     )
     keep = keep_recent_tokens or config.compaction.keep_recent_tokens
     covered_until_seq, kept_tokens = await plan_compaction(db, session_id, keep)
-    summary = await build_compaction_summary(db, session_id, covered_until_seq)
+    summary = summary_override or await build_compaction_summary(db, session_id, covered_until_seq)
     tokens_after = estimate_tokens(session.system_prompt) + estimate_tokens(summary) + kept_tokens
     compaction = Compaction(
         session_id=session_id,

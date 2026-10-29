@@ -10,13 +10,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from jsonschema import Draft202012Validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .agents import AgentService
+from .checkpoints import CheckpointService
+from .commands import CommandService
 from .compaction import build_model_messages, compact_session
 from .config import AppConfig, ResolutionError
 from .db import Database
 from .events import EventStore
+from .hooks import HookService
+from .mcp import McpError, McpService
 from .model_gateway import (
     BaseGateway,
     ModelError,
@@ -36,6 +42,7 @@ from .models import (
     Task,
     ToolCall,
     Turn,
+    Upload,
     UsageRecord,
     Workspace,
     new_id,
@@ -44,13 +51,16 @@ from .models import (
 from .models import (
     ModelRequest as ModelRequestRow,
 )
-from .security import PermissionDecision, PermissionEvaluator, redact_text
+from .plugins import PluginService
+from .prompts import build_system_prompt
+from .security import TOOL_CATEGORY, PermissionDecision, PermissionEvaluator, redact_text
 from .serialization import (
     interaction_dto,
     message_dto,
     parse_json,
     tool_call_dto,
 )
+from .skills import SkillService
 from .tasks import TaskManager
 from .tokens import calculate_cost, estimate_messages_tokens, estimate_tokens
 from .tools import (
@@ -59,6 +69,7 @@ from .tools import (
     ToolRegistry,
     ToolResult,
 )
+from .uploads import UploadService
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +109,7 @@ class StreamOutcome:
     usage: Usage
     retries: int
     message_id: str
+    finish_reason: str = ""
 
 
 class RuntimeManager:
@@ -110,6 +122,14 @@ class RuntimeManager:
         gateway: BaseGateway,
         registry: ToolRegistry,
         tasks: TaskManager,
+        agents: AgentService | None = None,
+        skills: SkillService | None = None,
+        mcp: McpService | None = None,
+        plugins: PluginService | None = None,
+        hooks: HookService | None = None,
+        uploads: UploadService | None = None,
+        checkpoints: CheckpointService | None = None,
+        commands: CommandService | None = None,
     ) -> None:
         self.db = db
         self.config = config
@@ -117,9 +137,18 @@ class RuntimeManager:
         self.gateway = gateway
         self.registry = registry
         self.tasks = tasks
+        self.agents = agents
+        self.skills = skills
+        self.mcp = mcp
+        self.plugins = plugins
+        self.hooks = hooks
+        self.uploads = uploads
+        self.checkpoints = checkpoints
+        self.commands = commands
         self.permissions = PermissionEvaluator(config.permissions)
         self._states: dict[str, RuntimeState] = {}
         self._closing = False
+        self._subagent_tasks: set[asyncio.Task[Any]] = set()
 
     # ------------------------------------------------------------------ state
 
@@ -141,9 +170,10 @@ class RuntimeManager:
         *,
         client_message_id: str | None = None,
         mode: str = "auto",
+        attachment_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         content = content.strip()
-        if not content:
+        if not content and not attachment_ids:
             raise ValueError("消息不能为空")
         state = self.state(session_id)
         async with state.lock:
@@ -186,13 +216,16 @@ class RuntimeManager:
                             "duplicate": True,
                             "queueItem": self._queue_dto(existing_queue),
                         }
-                active = state.active or session.status in {"running", "waiting_user", "compacting"}
+                if session.status == "waiting_user":
+                    raise PermissionError("会话正在等待用户回答，请先提交回答")
+                active = state.active or session.status in {"running", "compacting"}
                 if active:
                     delivery = "steer" if mode == "steer" else "queue"
                     item = QueuedMessage(
                         session_id=session_id,
                         mode=delivery,
                         content=content,
+                        attachments_json=json.dumps(attachment_ids or []),
                         client_message_id=client_message_id,
                     )
                     db.add(item)
@@ -206,12 +239,15 @@ class RuntimeManager:
                     )
                     await db.commit()
                     return {"queued": True, "duplicate": False, "queueItem": self._queue_dto(item)}
-                if session.status == "waiting_user":
-                    raise PermissionError("会话正在等待用户回答，请先提交回答")
                 if state.turn_task is not None and state.turn_task.done():
                     state.turn_task = None
+                attachments = await self._load_attachments(db, session_id, attachment_ids or [])
                 turn_id = await self._create_turn_in_db(
-                    db, session, user_content=content, client_message_id=client_message_id
+                    db,
+                    session,
+                    user_content=content,
+                    client_message_id=client_message_id,
+                    attachments=attachments,
                 )
                 await db.commit()
             await self._spawn_turn(state, turn_id)
@@ -224,18 +260,26 @@ class RuntimeManager:
         *,
         user_content: str | None,
         client_message_id: str | None = None,
+        attachments: list[Upload] | None = None,
     ) -> str:
         message_row: Message | None = None
         if user_content is not None:
+            text, raw_content, attachment_dto = self._build_user_content(
+                session, user_content, attachments or []
+            )
             message_row = await self._add_message(
                 db,
                 session.id,
                 None,
                 role="user",
-                text=user_content,
-                raw={"role": "user", "content": user_content},
+                text=text,
+                raw={"role": "user", "content": raw_content},
                 client_message_id=client_message_id,
+                content_extra={"attachments": attachment_dto},
             )
+            for upload in attachments or []:
+                upload.message_id = message_row.id
+                upload.session_id = session.id
         turn_seq = (
             int(
                 (
@@ -251,8 +295,9 @@ class RuntimeManager:
         await db.flush()
         if message_row is not None:
             message_row.turn_id = turn.id
-        if session.title in {"", "新会话"} and user_content:
-            session.title = user_content.replace("\n", " ")[:40]
+        if session.title in {"", "新会话"}:
+            title_source = user_content or "附件消息"
+            session.title = title_source.replace("\n", " ")[:40]
         session.status = "running"
         session.last_error = None
         session.updated_at = utcnow()
@@ -275,6 +320,52 @@ class RuntimeManager:
         await self.events.emit(db, session.id, "session.status", {"status": "running"})
         await self.events.emit(db, session.id, "session.updated", {"session": self._session_payload(session)})
         return turn.id
+
+    @staticmethod
+    async def _load_attachments(db: AsyncSession, session_id: str, ids: list[str]) -> list[Upload]:
+        uploads: list[Upload] = []
+        for upload_id in ids:
+            upload = await db.get(Upload, upload_id)
+            if upload is None or (upload.session_id and upload.session_id != session_id):
+                raise PermissionError(f"附件 {upload_id} 不属于当前会话")
+            uploads.append(upload)
+        return uploads
+
+    def _build_user_content(
+        self, session: Session, text: str, attachments: list[Upload]
+    ) -> tuple[str, str | list[dict[str, Any]], list[dict[str, Any]]]:
+        model = self._model_config(session)
+        vision = bool(model and model.supports_vision)
+        extra_text: list[str] = []
+        parts: list[dict[str, Any]] = [{"type": "text", "text": text}] if text else []
+        attachment_dto: list[dict[str, Any]] = []
+        image_count = 0
+        for upload in attachments:
+            attachment_dto.append(
+                {
+                    "id": upload.id,
+                    "filename": upload.filename,
+                    "mime": upload.mime,
+                    "kind": upload.kind,
+                    "url": f"/api/v1/uploads/{upload.id}/content",
+                    "width": upload.width,
+                    "height": upload.height,
+                }
+            )
+            if upload.kind == "image" and vision and self.uploads is not None:
+                parts.append(self.uploads.openai_content(upload))
+                image_count += 1
+            else:
+                label = "图片（当前模型不支持视觉，未发送图像）" if upload.kind == "image" else "附件"
+                extra_text.append(f"[{label} {upload.filename}]\n{upload.extracted_text or ''}".strip())
+        if extra_text:
+            parts.append({"type": "text", "text": "\n\n".join(extra_text)})
+        combined_text = text
+        if extra_text:
+            combined_text = (text + "\n\n" + "\n\n".join(extra_text)).strip()
+        if image_count:
+            return combined_text, parts, attachment_dto
+        return combined_text, combined_text, attachment_dto
 
     async def _spawn_turn(self, state: RuntimeState, turn_id: str) -> None:
         state.current_turn_id = turn_id
@@ -377,31 +468,95 @@ class RuntimeManager:
             session = await self._get_session(session_id)
             if session is None:
                 raise RuntimeError("session disappeared")
-            messages, prefix_text, prefix_hash, prefix_tokens = await self._build_request(session, turn_id)
-            tools = self.registry.openai_tools()
-            request = ModelRequest(
-                session_id=session_id,
-                turn_id=turn_id,
-                step=step + 1,
-                model_ref=session.model,
-                messages=messages,
-                tools=tools,
-                reasoning_level=session.reasoning_level,
-                max_output=self._model_max_output(session),
-                prefix_text=prefix_text,
-                prefix_hash=prefix_hash,
+            messages, prefix_text, prefix_hash, prefix_tokens, tools = await self._build_request(
+                session, turn_id
             )
-            request_row_id = await self._start_model_request(request, step + 1, prefix_tokens)
-            assistant = await self._create_streaming_message(state, session_id, turn_id)
+            agent_row = await self._get_agent(session.agent_id)
+            structured_output = None
+            if agent_row is not None and agent_row.structured_output_json:
+                try:
+                    structured_output = json.loads(agent_row.structured_output_json)
+                except json.JSONDecodeError:
+                    structured_output = None
+            primary = session.model
+            fallback_refs = [ref for ref in self.config.fallback_refs() if ref != primary]
+            candidate_refs = [primary, *fallback_refs]
+            outcome: StreamOutcome | None = None
             step += 1
-            try:
-                outcome = await self._stream_model(state, request, assistant, request_row_id)
-            except ModelError as exc:
-                if exc.code == "CONTEXT_TOO_LONG" and not compacted_this_turn:
-                    compacted_this_turn = True
-                    await self._force_compact(state, session_id)
+            for index, model_ref in enumerate(candidate_refs):
+                request = ModelRequest(
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    step=step,
+                    model_ref=model_ref,
+                    messages=messages,
+                    tools=tools,
+                    reasoning_level=session.reasoning_level,
+                    max_output=self._model_max_output_ref(model_ref),
+                    prefix_text=prefix_text,
+                    prefix_hash=prefix_hash,
+                    structured_output=structured_output,
+                )
+                request_row_id = await self._start_model_request(request, step, prefix_tokens)
+                assistant = await self._create_streaming_message(state, session_id, turn_id)
+                try:
+                    outcome = await self._stream_model(
+                        state,
+                        request,
+                        assistant,
+                        request_row_id,
+                        suppress_error_event=index + 1 < len(candidate_refs),
+                    )
+                    if index > 0:
+                        async with self.db.session() as db:
+                            await self.events.emit(
+                                db,
+                                session_id,
+                                "model.fallback",
+                                {
+                                    "turnId": turn_id,
+                                    "from": primary,
+                                    "to": model_ref,
+                                    "attempt": index,
+                                    "message": f"主模型失败，已切换到备用模型 {model_ref}",
+                                },
+                            )
+                            await db.commit()
+                    break
+                except ModelError as exc:
+                    if exc.code == "CONTEXT_TOO_LONG" and not compacted_this_turn:
+                        compacted_this_turn = True
+                        await self._force_compact(state, session_id)
+                        outcome = None
+                        break
+                    if index + 1 < len(candidate_refs):
+                        logger.warning(
+                            "falling back to secondary model",
+                            extra={
+                                "session_id": session_id,
+                                "from": model_ref,
+                                "to": candidate_refs[index + 1],
+                            },
+                        )
+                        continue
+                    raise
+            if outcome is None:
+                if compacted_this_turn:
                     continue
-                raise
+                raise ModelError("EMPTY_RESPONSE", "模型没有产生结果", retryable=True)
+            if outcome.finish_reason == "length":
+                await self._append_system_message(
+                    state,
+                    session_id,
+                    turn_id,
+                    "模型输出达到最大 token 限制，回答可能被截断。请继续或增加 maxOutput 后重试。",
+                )
+                await self.events_publish_session(
+                    state.session_id,
+                    "model.truncated",
+                    {"turnId": turn_id, "messageId": outcome.message_id},
+                )
+                break
             if not outcome.tool_calls:
                 if not waited_once:
                     waited_once = True
@@ -439,6 +594,8 @@ class RuntimeManager:
         request: ModelRequest,
         assistant: Message,
         request_row_id: str,
+        *,
+        suppress_error_event: bool = False,
     ) -> StreamOutcome:
         started = time.monotonic()
         content = ""
@@ -446,6 +603,7 @@ class RuntimeManager:
         retries = 0
         tool_calls: list[ToolCallRequest] = []
         usage = Usage()
+        finish_reason = ""
         try:
             async for chunk in self.gateway.stream(request):
                 if chunk.kind == "retry":
@@ -490,6 +648,7 @@ class RuntimeManager:
                         reasoning = chunk.reasoning
                     tool_calls = chunk.tool_calls
                     usage = chunk.usage or Usage()
+                    finish_reason = chunk.finish_reason
             tool_calls = await self._ensure_unique_call_ids(tool_calls)
             content_json = {
                 "text": content,
@@ -529,6 +688,7 @@ class RuntimeManager:
                 usage=usage,
                 retries=retries,
                 message_id=assistant.id,
+                finish_reason=finish_reason,
             )
         except ModelError as exc:
             await self._delete_message(assistant.id)
@@ -544,9 +704,10 @@ class RuntimeManager:
             await self._finalize_model_request(
                 request, request_row_id, Usage(), retries, int((time.monotonic() - started) * 1000)
             )
-            await self.events_publish_session(
-                state.session_id, "error", {"turnId": request.turn_id, **exc.to_payload()}
-            )
+            if not suppress_error_event:
+                await self.events_publish_session(
+                    state.session_id, "error", {"turnId": request.turn_id, **exc.to_payload()}
+                )
             raise
         except asyncio.CancelledError:
             async with self.db.session() as db:
@@ -629,6 +790,119 @@ class RuntimeManager:
 
     # ---------------------------------------------------------------- tools
 
+    async def allowed_tools(self, session: Session) -> list[dict[str, Any]]:
+        """Base tools + enabled MCP/plugin tools, filtered by the agent allow-list."""
+
+        tools = list(self.registry.openai_tools())
+        if self.mcp is not None:
+            try:
+                tools.extend(await self.mcp.tools_for_session(session.id))
+            except Exception:  # noqa: BLE001
+                logger.exception("failed to enumerate MCP tools", extra={"session_id": session.id})
+        if self.plugins is not None:
+            try:
+                tools.extend(await self.plugins.tools())
+            except Exception:  # noqa: BLE001
+                logger.exception("failed to enumerate plugin tools")
+        agent = await self._get_agent(session.agent_id)
+        allowed = AgentService.allowed_tools(agent) if agent is not None else None
+        cleaned: list[dict[str, Any]] = []
+        for item in tools:
+            function = item.get("function") or {}
+            name = str(function.get("name") or "")
+            if not name or (allowed is not None and name not in allowed):
+                continue
+            cleaned.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "description": function.get("description", ""),
+                        "parameters": function.get("parameters")
+                        or {"type": "object", "properties": {}, "additionalProperties": False},
+                    },
+                }
+            )
+        return sorted(cleaned, key=lambda item: item["function"]["name"])
+
+    async def _tool_definition(self, session: Session, name: str) -> tuple[dict[str, Any] | None, str, str]:
+        spec = self.registry.get(name)
+        if spec is not None:
+            return spec.input_schema, TOOL_CATEGORY.get(name, "shell"), "static"
+        if name.startswith("mcp__") and self.mcp is not None:
+            try:
+                for item in await self.mcp.tools_for_session(session.id):
+                    if item["function"]["name"] == name:
+                        return item["function"]["parameters"], "mcp", "mcp"
+            except Exception:  # noqa: BLE001
+                return None, "mcp", "mcp"
+            return None, "mcp", "mcp"
+        if name.startswith("plugin__") and self.plugins is not None:
+            for item in await self.plugins.tools():
+                if item["function"]["name"] == name:
+                    return item["function"]["parameters"], "plugin", "plugin"
+            return None, "plugin", "plugin"
+        return None, "shell", "unknown"
+
+    @staticmethod
+    def _validate_dynamic(name: str, args: dict[str, Any], schema: dict[str, Any]) -> ToolResult | None:
+        validator = Draft202012Validator(schema)
+        errors = sorted(validator.iter_errors(args), key=lambda error: list(error.path))
+        if not errors:
+            return None
+        details = []
+        for error in errors[:8]:
+            path = ".".join(str(part) for part in error.path) or "$"
+            if error.validator == "additionalProperties":
+                match = __import__("re").search(r"'([^']+)'", error.message)
+                if match:
+                    path = match.group(1)
+            details.append({"path": path, "message": error.message})
+        return ToolResult.failure(
+            "INVALID_INPUT",
+            f"工具 {name} 参数校验失败，请修正后重试；本次未执行",
+            {"errors": details},
+        )
+
+    async def _execute_dynamic(
+        self,
+        session: Session,
+        name: str,
+        args: dict[str, Any],
+        kind: str,
+        workspace_root: Path,
+    ) -> ToolResult:
+        if kind == "mcp" and self.mcp is not None:
+            try:
+                payload = await self.mcp.call(session.id, name, args)
+            except PermissionError as exc:
+                return ToolResult.failure("PERMISSION_DENIED", str(exc))
+            except McpError as exc:
+                return ToolResult.failure("TOOL_ERROR", str(exc))
+            result = payload.get("result") or {}
+            if isinstance(result, dict) and result.get("isError"):
+                return ToolResult.failure("TOOL_ERROR", "MCP 工具返回错误", {"result": result})
+            content = result.get("content") if isinstance(result, dict) else result
+            texts = []
+            if isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "text":
+                        texts.append(str(item.get("text") or ""))
+            text = "\n".join(texts) if texts else json.dumps(result, ensure_ascii=False)
+            return ToolResult.success(
+                {
+                    "content": text[: self.config.budget.max_tool_output_chars],
+                    "structuredContent": result.get("structuredContent")
+                    if isinstance(result, dict)
+                    else None,
+                    "untrusted": True,
+                    "server": payload.get("server"),
+                }
+            )
+        if kind == "plugin" and self.plugins is not None:
+            return await self.plugins.execute_tool(name, args, workspace_root=workspace_root)
+        return ToolResult.failure("INVALID_INPUT", "未知工具")
+
     async def _execute_tool_calls(
         self,
         state: RuntimeState,
@@ -643,6 +917,36 @@ class RuntimeManager:
             raise RuntimeError("workspace not found")
         agent = await self._get_agent(session.agent_id)
         plan_mode = session.mode == "plan" or bool(agent and agent.read_only)
+        base_permissions = (
+            AgentService.effective_permissions(agent, self.config.permissions)
+            if agent is not None
+            else self.config.permissions
+        )
+        evaluator = PermissionEvaluator(base_permissions)
+        allowed_tool_names = AgentService.allowed_tools(agent) if agent is not None else None
+        workspace_root = Path(workspace.root_path)
+        if (
+            self.config.tools.parallel_read_only
+            and len(calls) > 1
+            and await self._parallel_readonly_eligible(
+                session,
+                calls,
+                evaluator,
+                plan_mode=plan_mode,
+                allowed_tool_names=allowed_tool_names,
+                failure_counts=failure_counts,
+                denied_signatures=denied_signatures,
+            )
+        ):
+            await self._execute_parallel_readonly(
+                state,
+                session,
+                turn_id,
+                calls,
+                workspace_root,
+                evaluator,
+            )
+            return
         for call in calls:
             args, parse_error = parse_tool_arguments(call.arguments)
             signature = f"{call.name}:{json.dumps(args, ensure_ascii=False, sort_keys=True)}"
@@ -687,14 +991,26 @@ class RuntimeManager:
                     f"相同工具与参数已连续失败 {failure_counts[signature]} 次。请停止重试，改变方法或询问用户。",
                 )
             else:
-                result = self.registry.validate(call.name, args)
+                schema, category, tool_kind = await self._tool_definition(session, call.name)
+                if allowed_tool_names is not None and call.name not in allowed_tool_names:
+                    result = ToolResult.failure(
+                        "PERMISSION_DENIED",
+                        f"当前 Agent 未允许使用工具 {call.name}；请更换 Agent 或调整工具白名单。",
+                    )
+                elif tool_kind == "unknown" or schema is None:
+                    result = ToolResult.failure("INVALID_INPUT", f"未知工具 {call.name}")
+                elif tool_kind == "static":
+                    result = self.registry.validate(call.name, args)
+                else:
+                    result = self._validate_dynamic(call.name, args, schema)
                 if result is None:
                     grants = await self._permission_grants(call.name)
-                    decision = self.permissions.evaluate(
+                    decision = evaluator.evaluate(
                         tool=call.name,
                         resource=self._permission_resource(call.name, args),
                         plan_mode=plan_mode,
                         grants=grants,
+                        category_override=category,
                     )
                     await self._update_tool(
                         tool.id,
@@ -742,6 +1058,18 @@ class RuntimeManager:
                             started_at=utcnow(),
                             emit=True,
                         )
+                        if self.hooks is not None:
+                            try:
+                                extra = await self.plugins.hooks() if self.plugins is not None else []
+                                await self.hooks.run(
+                                    "tool.before",
+                                    {"tool": call.name, "input": args, "toolCallId": tool.id},
+                                    session=session,
+                                    workspace_root=workspace_root,
+                                    extra_hooks=extra,
+                                )
+                            except Exception:  # noqa: BLE001
+                                logger.exception("tool.before hook failed")
                         ctx = ToolContext(
                             session_id=session.id,
                             turn_id=turn_id,
@@ -750,14 +1078,29 @@ class RuntimeManager:
                             db=self.db,
                             events=self.events,
                             task_manager=self.tasks,
-                            workspace_root=Path(workspace.root_path),
+                            workspace_root=workspace_root,
                             cancel_event=state.cancel_event,
                             request_interaction=lambda kind, payload: self._request_interaction(
                                 state, session.id, turn_id, kind, payload
                             ),
+                            checkpoints=self.checkpoints,
+                            uploads=self.uploads,
+                            skills=self.skills,
+                            gateway=self.gateway,
+                            model_ref=session.model,
+                            spawn_agent=lambda tool_id=tool.id, **kwargs: self.spawn_subagent(
+                                session, tool_call_id=tool_id, **kwargs
+                            ),
+                            session=session,
                         )
+                        if tool_kind == "static":
+                            coroutine = self.registry.execute(call.name, args, ctx)
+                        else:
+                            coroutine = self._execute_dynamic(
+                                session, call.name, args, tool_kind, workspace_root
+                            )
                         execution = asyncio.create_task(
-                            self.registry.execute(call.name, args, ctx),
+                            coroutine,
                             name=f"tool:{tool.id}",
                         )
                         state.tool_tasks.add(execution)
@@ -770,6 +1113,24 @@ class RuntimeManager:
                             raise
                         finally:
                             state.tool_tasks.discard(execution)
+                        if self.hooks is not None:
+                            try:
+                                extra = await self.plugins.hooks() if self.plugins is not None else []
+                                await self.hooks.run(
+                                    "tool.after",
+                                    {
+                                        "tool": call.name,
+                                        "input": args,
+                                        "toolCallId": tool.id,
+                                        "status": self._status_for_result(result),
+                                        "result": result.to_payload(),
+                                    },
+                                    session=session,
+                                    workspace_root=workspace_root,
+                                    extra_hooks=extra,
+                                )
+                            except Exception:  # noqa: BLE001
+                                logger.exception("tool.after hook failed")
 
             if result is None:
                 result = ToolResult.failure("INTERNAL", "工具未产生结果")
@@ -794,6 +1155,177 @@ class RuntimeManager:
             else:
                 failure_counts.pop(signature, None)
             await self._append_tool_message(state, session.id, turn_id, call.id, result)
+
+    async def _parallel_readonly_eligible(
+        self,
+        session: Session,
+        calls: list[ToolCallRequest],
+        evaluator: PermissionEvaluator,
+        *,
+        plan_mode: bool,
+        allowed_tool_names: list[str] | None,
+        failure_counts: dict[str, int],
+        denied_signatures: set[str],
+    ) -> bool:
+        for call in calls:
+            spec = self.registry.get(call.name)
+            if spec is None or not spec.read_only:
+                return False
+            if allowed_tool_names is not None and call.name not in allowed_tool_names:
+                return False
+            args, error = parse_tool_arguments(call.arguments)
+            if error:
+                return False
+            signature = f"{call.name}:{json.dumps(args, ensure_ascii=False, sort_keys=True)}"
+            if signature in denied_signatures:
+                return False
+            if failure_counts.get(signature, 0) >= self.config.budget.max_repeat_failures:
+                return False
+            grants = await self._permission_grants(call.name)
+            decision = evaluator.evaluate(
+                tool=call.name,
+                resource=self._permission_resource(call.name, args),
+                plan_mode=plan_mode,
+                grants=grants,
+            )
+            if decision.action != "allow":
+                return False
+        return True
+
+    async def _execute_parallel_readonly(
+        self,
+        state: RuntimeState,
+        session: Session,
+        turn_id: str,
+        calls: list[ToolCallRequest],
+        workspace_root: Path,
+        evaluator: PermissionEvaluator,
+    ) -> None:
+        assistant_id = (await self._assistant_message_for_turn(turn_id)) or ""
+        rows: list[tuple[ToolCall, dict[str, Any], str]] = []
+        async with self.db.session() as db:
+            for call in calls:
+                args, _ = parse_tool_arguments(call.arguments)
+                grants = await self._permission_grants(call.name)
+                decision = evaluator.evaluate(
+                    tool=call.name,
+                    resource=self._permission_resource(call.name, args),
+                    plan_mode=session.mode == "plan",
+                    grants=grants,
+                )
+                row = ToolCall(
+                    id=call.id,
+                    session_id=session.id,
+                    turn_id=turn_id,
+                    message_id=assistant_id,
+                    name=call.name,
+                    input_json=json.dumps(args, ensure_ascii=False, separators=(",", ":")),
+                    status="running",
+                    risk=decision.risk,
+                    started_at=utcnow(),
+                )
+                db.add(row)
+                rows.append((row, args, decision.category))
+            await db.flush()
+            for row, _args, _category in rows:
+                await self.events.emit(db, session.id, "tool.started", {"toolCall": tool_call_dto(row)})
+            await db.commit()
+
+        async def run_one(index: int) -> ToolResult:
+            row, args, _category = rows[index]
+            ctx = ToolContext(
+                session_id=session.id,
+                turn_id=turn_id,
+                tool_call_id=row.id,
+                config=self.config,
+                db=self.db,
+                events=self.events,
+                task_manager=self.tasks,
+                workspace_root=workspace_root,
+                cancel_event=state.cancel_event,
+                request_interaction=lambda kind, payload: self._request_interaction(
+                    state, session.id, turn_id, kind, payload
+                ),
+                checkpoints=self.checkpoints,
+                uploads=self.uploads,
+                skills=self.skills,
+                gateway=self.gateway,
+                model_ref=session.model,
+                spawn_agent=lambda tool_id=row.id, **kwargs: self.spawn_subagent(
+                    session, tool_call_id=tool_id, **kwargs
+                ),
+                session=session,
+            )
+            return await self.registry.execute(row.name, args, ctx)
+
+        if self.hooks is not None:
+            extra = await self.plugins.hooks() if self.plugins is not None else []
+            for row, args, _category in rows:
+                try:
+                    await self.hooks.run(
+                        "tool.before",
+                        {"tool": row.name, "input": args, "toolCallId": row.id},
+                        session=session,
+                        workspace_root=workspace_root,
+                        extra_hooks=extra,
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception("tool.before hook failed")
+        tasks = [
+            asyncio.create_task(run_one(index), name=f"tool:{rows[index][0].id}")
+            for index in range(len(rows))
+        ]
+        for task in tasks:
+            state.tool_tasks.add(task)
+        try:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+        except asyncio.CancelledError:
+            for task in tasks:
+                task.cancel()
+            raise
+        finally:
+            for task in tasks:
+                state.tool_tasks.discard(task)
+
+        for (row, _args, _category), result in zip(rows, results, strict=True):
+            if isinstance(result, BaseException):
+                if isinstance(result, ToolCancelled):
+                    raise result
+                result = ToolResult.failure("TOOL_ERROR", f"工具执行异常：{type(result).__name__}")
+            status = self._status_for_result(result)
+            async with self.db.session() as db:
+                stored = await db.get(ToolCall, row.id)
+                if stored is not None:
+                    stored.status = status
+                    stored.output_json = result.to_json()
+                    stored.error_code = result.error_code
+                    stored.ended_at = utcnow()
+                    await db.flush()
+                    await self.events.emit(
+                        db,
+                        session.id,
+                        "tool.completed",
+                        {"toolCall": tool_call_dto(stored)},
+                    )
+                    await db.commit()
+            await self._append_tool_message(state, session.id, turn_id, row.id, result)
+            if self.hooks is not None:
+                try:
+                    extra = await self.plugins.hooks() if self.plugins is not None else []
+                    await self.hooks.run(
+                        "tool.after",
+                        {
+                            "tool": row.name,
+                            "toolCallId": row.id,
+                            "status": status,
+                            "result": result.to_payload(),
+                        },
+                        session=session,
+                        workspace_root=workspace_root,
+                        extra_hooks=extra,
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception("tool.after hook failed")
 
     async def _update_tool(self, tool_id: str, *, emit: bool = False, **values: Any) -> None:
         async with self.db.session() as db:
@@ -850,6 +1382,10 @@ class RuntimeManager:
             return str(args.get("path", ""))
         if name == "web_fetch":
             return str(args.get("url", ""))
+        if name.startswith("mcp__"):
+            return name
+        if name.startswith("plugin__"):
+            return name
         return json.dumps(args, ensure_ascii=False, sort_keys=True)[:500]
 
     async def _permission_grants(self, tool: str) -> list[tuple[str, str]]:
@@ -1060,7 +1596,7 @@ class RuntimeManager:
                 session = await db.get(Session, session_id)
                 if session is None:
                     raise LookupError("会话不存在")
-                if session.status not in {"paused", "error", "idle"}:
+                if session.status not in {"paused", "error"}:
                     raise ValueError(f"当前状态 {session.status} 不能恢复")
                 await self._append_system_message_in_db(
                     db,
@@ -1157,6 +1693,7 @@ class RuntimeManager:
             await self.events.emit(db, state.session_id, "session.status", {"status": session.status})
             await db.commit()
         await self.events_publish_global("session.stopped", {"sessionId": state.session_id, "reason": reason})
+        await self._run_turn_end_hook(state.session_id, turn_id, "paused", reason)
 
     async def _fill_missing_tool_results(
         self, db: AsyncSession, session_id: str, turn_id: str, *, code: str, message: str
@@ -1297,6 +1834,7 @@ class RuntimeManager:
                 db, state.session_id, "session.status", {"status": "error", "message": message}
             )
             await db.commit()
+        await self._run_turn_end_hook(state.session_id, turn_id, "failed", message)
 
     async def _complete_turn(self, state: RuntimeState, turn_id: str) -> None:
         async with self.db.session() as db:
@@ -1323,6 +1861,26 @@ class RuntimeManager:
             )
             await db.commit()
         await self._emit_usage(state.session_id, turn_id)
+        await self._run_turn_end_hook(state.session_id, turn_id, "completed", None)
+
+    async def _run_turn_end_hook(self, session_id: str, turn_id: str, status: str, error: str | None) -> None:
+        if self.hooks is None:
+            return
+        try:
+            session = await self._get_session(session_id)
+            if session is None:
+                return
+            workspace = await self._get_workspace(session.workspace_id)
+            extra = await self.plugins.hooks() if self.plugins is not None else []
+            await self.hooks.run(
+                "turn.end",
+                {"sessionId": session_id, "turnId": turn_id, "status": status, "error": error},
+                session=session,
+                workspace_root=Path(workspace.root_path) if workspace else None,
+                extra_hooks=extra,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("turn.end hook failed", extra={"session_id": session_id})
 
     # --------------------------------------------------------- task dispatch
 
@@ -1403,8 +1961,14 @@ class RuntimeManager:
                 if item is None:
                     return
                 item.status = "consumed"
+                attachment_ids = json.loads(item.attachments_json or "[]")
+                attachments = await self._load_attachments(db, session_id, attachment_ids)
                 turn_id = await self._create_turn_in_db(
-                    db, session, user_content=item.content, client_message_id=item.client_message_id
+                    db,
+                    session,
+                    user_content=item.content,
+                    client_message_id=item.client_message_id,
+                    attachments=attachments,
                 )
                 await self.events.emit(
                     db,
@@ -1447,7 +2011,7 @@ class RuntimeManager:
                 await db.execute(
                     select(Task).where(
                         Task.session_id == session_id,
-                        Task.status.in_(["succeeded", "failed", "cancelled"]),
+                        Task.status.in_(["succeeded", "failed", "cancelled", "timeout"]),
                         Task.notified.is_(False),
                     )
                 )
@@ -1494,14 +2058,23 @@ class RuntimeManager:
                 session = await db.get(Session, session_id)
                 for item in items:
                     item.status = "consumed"
+                    attachment_ids = json.loads(item.attachments_json or "[]")
+                    attachments = await self._load_attachments(db, session_id, attachment_ids)
+                    text, raw_content, attachment_dto = self._build_user_content(
+                        session, item.content, attachments
+                    )
                     row = await self._add_message(
                         db,
                         session_id,
                         turn_id,
                         role="user",
-                        text=item.content,
-                        raw={"role": "user", "content": item.content},
+                        text=text,
+                        raw={"role": "user", "content": raw_content},
+                        content_extra={"attachments": attachment_dto},
                     )
+                    for upload in attachments:
+                        upload.message_id = row.id
+                        upload.session_id = session_id
                     await self.events.emit(db, session_id, "message.created", {"message": message_dto(row)})
                 if session:
                     session.updated_at = utcnow()
@@ -1518,6 +2091,32 @@ class RuntimeManager:
         self, state: RuntimeState, session_id: str, turn_id: str
     ) -> int:
         return await self._notify_terminal_tasks(state, session_id, turn_id)
+
+    async def compact_now(self, session_id: str) -> Compaction:
+        state = self.state(session_id)
+        await self._force_compact(state, session_id)
+        async with self.db.session() as db:
+            session = await db.get(Session, session_id)
+            if session is not None and not state.active:
+                session.status = "idle"
+                session.updated_at = utcnow()
+                await db.commit()
+        async with self.db.session() as db:
+            row = (
+                (
+                    await db.execute(
+                        select(Compaction)
+                        .where(Compaction.session_id == session_id)
+                        .order_by(Compaction.created_at.desc())
+                        .limit(1)
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if row is None:
+                raise RuntimeError("压缩未产生结果")
+            return row
 
     async def _maybe_auto_compact(self, state: RuntimeState, session_id: str) -> bool:
         if not self.config.compaction.enabled:
@@ -1572,8 +2171,19 @@ class RuntimeManager:
             await self.events.emit(db, session_id, "session.status", {"status": "compacting"})
             await db.commit()
         try:
+            summary_override = None
+            if self.config.compaction.use_model:
+                summary_override = await self._llm_compaction_summary(session_id)
             async with self.db.session() as db:
-                await compact_session(db, self.events, self.config, session_id)
+                await compact_session(
+                    db,
+                    self.events,
+                    self.config,
+                    session_id,
+                    summary_override=summary_override,
+                )
+            if self.config.compaction.reload_project_rules:
+                await self._reload_session_prompt(session_id)
         finally:
             async with self.db.session() as db:
                 session = await db.get(Session, session_id)
@@ -1583,9 +2193,90 @@ class RuntimeManager:
                 await self.events.emit(db, session_id, "session.status", {"status": "running"})
                 await db.commit()
 
+    async def _llm_compaction_summary(self, session_id: str) -> str | None:
+        model_ref = self.config.compaction.model or self.config.defaults.compaction_model
+        if not model_ref:
+            return None
+        try:
+            self.config.provider_for(model_ref)
+        except ResolutionError:
+            return None
+        try:
+            async with self.db.session() as db:
+                rows = (
+                    (
+                        await db.execute(
+                            select(Message)
+                            .where(Message.session_id == session_id)
+                            .order_by(Message.seq.asc())
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+            transcript = "\n".join(
+                f"{row.role}: {str(parse_json(row.content_json).get('text') or '')[:1_200]}"
+                for row in rows[-80:]
+            )[:40_000]
+            prompt = (
+                "请把下面的 Agent 会话压缩成可继续工作的摘要。必须保留：当前目标、用户约束、"
+                "已完成工作、关键决定、未完成事项、阻塞问题、相关文件、后台任务 taskId、待回答问题。"
+                "只输出摘要正文，不要编造未出现的事实。\n\n" + transcript
+            )
+            request = ModelRequest(
+                session_id=session_id,
+                turn_id="compaction",
+                step=1,
+                model_ref=model_ref,
+                messages=[{"role": "user", "content": prompt}],
+                tools=[],
+                reasoning_level="off",
+                max_output=self.config.compaction.summary_max_tokens,
+                prefix_text=prompt,
+                prefix_hash=__import__("hashlib").sha256(prompt.encode()).hexdigest(),
+            )
+            parts: list[str] = []
+            async for chunk in self.gateway.stream(request):
+                if chunk.kind == "content":
+                    parts.append(chunk.text)
+                elif chunk.kind == "completed" and chunk.content:
+                    parts = [chunk.content]
+            return "".join(parts)[:20_000] or None
+        except Exception:  # noqa: BLE001
+            logger.exception("LLM compaction failed; falling back to deterministic summary")
+            return None
+
+    async def _reload_session_prompt(self, session_id: str) -> None:
+        async with self.db.session() as db:
+            session = await db.get(Session, session_id)
+            if session is None:
+                return
+            workspace = await db.get(Workspace, session.workspace_id)
+            agent = await db.get(Agent, session.agent_id)
+            if workspace is None or agent is None:
+                return
+        skills = await self.skills.metadata_for_session(session) if self.skills else []
+        mcp_servers = await self.mcp.metadata_for_session(session.id) if self.mcp else []
+        prompt, env_info = build_system_prompt(
+            config=self.config,
+            agent=agent,
+            workspace=workspace,
+            created_at=session.created_at,
+            skills=skills,
+            mcp_servers=mcp_servers,
+        )
+        async with self.db.session() as db:
+            row = await db.get(Session, session_id)
+            if row is None:
+                return
+            row.system_prompt = prompt
+            row.env_info = env_info
+            row.updated_at = utcnow()
+            await db.commit()
+
     async def _build_request(
         self, session: Session, turn_id: str
-    ) -> tuple[list[dict[str, Any]], str, str, int]:
+    ) -> tuple[list[dict[str, Any]], str, str, int, list[dict[str, Any]]]:
         async with self.db.session() as db:
             rows = (
                 (
@@ -1619,8 +2310,9 @@ class RuntimeManager:
             raw_messages=raw_messages,
             current_turn_id=turn_id,
         )
-        prefix_text, prefix_hash = messages_prefix_text(messages, self.registry.openai_tools())
-        return messages, prefix_text, prefix_hash, estimate_tokens(prefix_text)
+        tools = await self.allowed_tools(session)
+        prefix_text, prefix_hash = messages_prefix_text(messages, tools)
+        return messages, prefix_text, prefix_hash, estimate_tokens(prefix_text), tools
 
     async def _start_model_request(self, request: ModelRequest, step: int, prefix_tokens: int) -> str:
         async with self.db.session() as db:
@@ -1666,7 +2358,7 @@ class RuntimeManager:
         if session is None:
             return
         try:
-            _, model = self.config.provider_for(session.model)
+            _, model = self.config.provider_for(request.model_ref)
         except ResolutionError:
             model = None
         cost = (
@@ -1685,7 +2377,7 @@ class RuntimeManager:
                 UsageRecord(
                     session_id=request.session_id,
                     turn_id=request.turn_id,
-                    model=session.model,
+                    model=request.model_ref,
                     input_tokens=usage.input_tokens,
                     output_tokens=usage.output_tokens,
                     cache_hit_tokens=usage.cache_hit_tokens,
@@ -1793,6 +2485,7 @@ class RuntimeManager:
         text: str,
         raw: dict[str, Any],
         client_message_id: str | None = None,
+        content_extra: dict[str, Any] | None = None,
     ) -> Message:
         seq = await self._next_message_seq(db, session_id)
         row = Message(
@@ -1800,7 +2493,11 @@ class RuntimeManager:
             turn_id=turn_id,
             seq=seq,
             role=role,
-            content_json=json.dumps({"text": text}, ensure_ascii=False, separators=(",", ":")),
+            content_json=json.dumps(
+                {"text": text, **(content_extra or {})},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
             raw_json=json.dumps(raw, ensure_ascii=False, separators=(",", ":")),
             client_message_id=client_message_id,
         )
@@ -1868,6 +2565,212 @@ class RuntimeManager:
             row = await db.get(Message, message_id)
             return message_dto(row) if row else None
 
+    async def spawn_subagent(
+        self,
+        parent: Session,
+        *,
+        task: str,
+        agent_id: str | None = None,
+        background: bool = False,
+        tool_call_id: str | None = None,
+    ) -> dict[str, Any]:
+        task = task.strip()
+        if not task:
+            raise ValueError("子 Agent 任务不能为空")
+        depth = 0
+        cursor = parent
+        async with self.db.session() as db:
+            while cursor.parent_session_id:
+                depth += 1
+                cursor = await db.get(Session, cursor.parent_session_id)
+                if cursor is None:
+                    break
+            siblings = (
+                (
+                    await db.execute(
+                        select(Session).where(
+                            Session.parent_session_id == parent.id,
+                            Session.status.in_(["running", "waiting_user", "compacting"]),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        if depth >= self.config.subagents.max_depth:
+            raise PermissionError(f"子 Agent 嵌套深度超限（最大 {self.config.subagents.max_depth} 层）")
+        if len(siblings) >= self.config.subagents.max_concurrent:
+            raise PermissionError(f"子 Agent 并发数超限（最大 {self.config.subagents.max_concurrent}）")
+        workspace = await self._get_workspace(parent.workspace_id)
+        if workspace is None:
+            raise LookupError("工作区不存在")
+        # A sub-agent must never gain more authority than its parent. We therefore
+        # always execute with the parent Agent's tool allow-list and merged
+        # permissions; an optional requested Agent only contributes its prompt,
+        # default model and read-only constraint.
+        agent = await self._get_agent(parent.agent_id) or await self._get_agent("build")
+        if agent is None:
+            raise LookupError("没有可用 Agent")
+        requested = await self._get_agent(agent_id) if agent_id else None
+        role_agent = requested if requested is not None and requested.enabled else None
+        model_ref = parent.model
+        if role_agent is not None and role_agent.default_model:
+            try:
+                self.config.provider_for(role_agent.default_model)
+                model_ref = role_agent.default_model
+            except ResolutionError:
+                model_ref = parent.model
+        try:
+            _, model = self.config.provider_for(model_ref)
+            reasoning = (
+                role_agent.default_reasoning_level
+                if role_agent and role_agent.default_reasoning_level in model.reasoning_levels
+                else (model.reasoning_levels[0] if model.reasoning_levels else "off")
+            )
+        except ResolutionError:
+            raise
+        created = utcnow()
+        system_prompt, env_info = build_system_prompt(
+            config=self.config,
+            agent=agent,
+            workspace=workspace,
+            created_at=created,
+        )
+        if role_agent is not None and role_agent.id != agent.id and role_agent.system_prompt.strip():
+            system_prompt += "\n\n## 子任务角色\n" + role_agent.system_prompt.strip()
+        child = Session(
+            workspace_id=parent.workspace_id,
+            agent_id=agent.id,
+            title=f"子任务：{task.replace(chr(10), ' ')[:36]}",
+            model=model_ref,
+            reasoning_level=reasoning,
+            mode=(
+                "plan"
+                if parent.mode == "plan" or agent.read_only or bool(role_agent and role_agent.read_only)
+                else "build"
+            ),
+            status="idle",
+            system_prompt=system_prompt,
+            env_info=env_info,
+            parent_session_id=parent.id,
+            created_at=created,
+            updated_at=created,
+        )
+        async with self.db.session() as db:
+            db.add(child)
+            await db.flush()
+            await self.events.emit(db, child.id, "session.created", {"session": self._session_payload(child)})
+            await db.commit()
+        if self.skills is not None:
+            await self.skills.ensure_defaults(child, agent)
+        if self.mcp is not None:
+            for server_id in json.loads(agent.mcp_json or "[]"):
+                try:
+                    await self.mcp.set_session_enabled(child.id, str(server_id), True)
+                except LookupError:
+                    continue
+        metadata_skills = await self.skills.metadata_for_session(child) if self.skills else []
+        metadata_mcp = await self.mcp.metadata_for_session(child.id) if self.mcp else []
+        if metadata_skills or metadata_mcp:
+            refreshed, env_info = build_system_prompt(
+                config=self.config,
+                agent=agent,
+                workspace=workspace,
+                created_at=created,
+                skills=metadata_skills,
+                mcp_servers=metadata_mcp,
+            )
+            async with self.db.session() as db:
+                row = await db.get(Session, child.id)
+                if row:
+                    row.system_prompt = refreshed
+                    row.env_info = env_info
+                    await db.commit()
+            child.system_prompt = refreshed
+        if self.hooks is not None:
+            try:
+                await self.hooks.run(
+                    "session.start",
+                    {"sessionId": child.id, "parentSessionId": parent.id, "task": task},
+                    session=child,
+                    workspace_root=Path(workspace.root_path),
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("subagent session.start hook failed")
+        await self.send_message(child.id, task, mode="auto")
+        if background:
+            tracked = await self.tasks.start_coroutine(
+                session_id=parent.id,
+                tool_call_id=tool_call_id,
+                name=f"子 Agent：{task[:60]}",
+                coroutine=self._collect_subagent_result(
+                    child.id, timeout=self.config.subagents.background_timeout_seconds
+                ),
+            )
+            return {
+                "taskId": tracked.id,
+                "childSessionId": child.id,
+                "status": "running",
+                "background": True,
+            }
+        return await self._collect_subagent_result(child.id, timeout=self.config.subagents.timeout_seconds)
+
+    async def _collect_subagent_result(self, session_id: str, *, timeout: int) -> dict[str, Any]:
+        deadline = asyncio.get_running_loop().time() + timeout
+        state = self.state(session_id)
+        session = await self._get_session(session_id)
+        while asyncio.get_running_loop().time() < deadline:
+            session = await self._get_session(session_id)
+            if session is None:
+                raise LookupError("子 Agent 会话不存在")
+            if not state.active and session.status in {"idle", "error", "paused", "waiting_user"}:
+                break
+            await asyncio.sleep(0.1)
+        else:
+            await self.pause(session_id, reason="pause")
+            return {
+                "childSessionId": session_id,
+                "status": "timeout",
+                "errorCode": "TIMEOUT",
+                "message": f"子 Agent 在 {timeout} 秒内未完成，已暂停",
+            }
+        async with self.db.session() as db:
+            messages = (
+                (
+                    await db.execute(
+                        select(Message)
+                        .where(
+                            Message.session_id == session_id,
+                            Message.role == "assistant",
+                            Message.status == "complete",
+                        )
+                        .order_by(Message.seq.desc())
+                        .limit(1)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        content = ""
+        if messages:
+            content = str(parse_json(messages[0].content_json).get("text") or "")[:12_000]
+        status = session.status if session else "error"
+        result = {
+            "childSessionId": session_id,
+            "status": status,
+            "summary": content,
+            "parentSessionId": (await self._get_session(session_id)).parent_session_id
+            if await self._get_session(session_id)
+            else None,
+        }
+        if status == "error":
+            result["errorCode"] = "SUBAGENT_FAILED"
+            result["message"] = (session.last_error if session else None) or "子 Agent 执行失败"
+        elif status == "waiting_user":
+            result["errorCode"] = "SUBAGENT_WAITING_USER"
+            result["message"] = "子 Agent 正在等待用户回答或授权，请打开子会话处理"
+        return result
+
     async def _get_session(self, session_id: str) -> Session | None:
         async with self.db.session() as db:
             return await db.get(Session, session_id)
@@ -1913,6 +2816,13 @@ class RuntimeManager:
         model = self._model_config(session)
         return model.max_output if model else 4_096
 
+    def _model_max_output_ref(self, model_ref: str) -> int:
+        try:
+            _, model = self.config.provider_for(model_ref)
+            return model.max_output
+        except ResolutionError:
+            return 4_096
+
     async def _queue_payload(self, db: AsyncSession, session_id: str) -> list[dict[str, Any]]:
         rows = (
             (
@@ -1933,6 +2843,7 @@ class RuntimeManager:
             "id": item.id,
             "mode": item.mode,
             "content": item.content,
+            "attachments": json.loads(item.attachments_json or "[]"),
             "status": item.status,
             "clientMessageId": item.client_message_id,
             "createdAt": item.created_at,

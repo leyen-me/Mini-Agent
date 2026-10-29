@@ -24,6 +24,11 @@ DEMO_AGENTS = [
         "system_prompt": BUILD_AGENT_PROMPT,
         "read_only": False,
         "builtin": True,
+        "enabled": True,
+        "default_reasoning_level": "off",
+        "permissions_json": "{}",
+        "skills_json": "[]",
+        "mcp_json": "[]",
     },
     {
         "id": "plan",
@@ -32,6 +37,11 @@ DEMO_AGENTS = [
         "system_prompt": PLAN_AGENT_PROMPT,
         "read_only": True,
         "builtin": True,
+        "enabled": True,
+        "default_reasoning_level": "off",
+        "permissions_json": "{}",
+        "skills_json": "[]",
+        "mcp_json": "[]",
     },
 ]
 

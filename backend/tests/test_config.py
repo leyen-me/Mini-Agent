@@ -134,3 +134,78 @@ def test_duplicate_default_model_falls_back_at_app_level():
         ],
     )
     assert config.defaults.model == "mock/echo"
+
+
+def test_provider_custom_header_names_are_preserved(tmp_path):
+    from mini_agent.config import normalize_config_keys
+
+    raw = {
+        "providers": [
+            {
+                "id": "custom",
+                "headers": {"X-Api-Key": "secret", "X-Custom-Trace": "on"},
+            }
+        ]
+    }
+    normalized = normalize_config_keys(raw)
+    assert normalized["providers"][0]["headers"] == {
+        "X-Api-Key": "secret",
+        "X-Custom-Trace": "on",
+    }
+
+
+def test_example_config_has_no_duplicate_top_level_keys():
+    import re
+
+    root = Path(__file__).resolve().parents[2]
+    text = (root / "config" / "mini-agent.example.yaml").read_text(encoding="utf-8")
+    keys = [match.group(1) for match in re.finditer(r"^([A-Za-z_][\w-]*):", text, re.M)]
+    assert len(keys) == len(set(keys)), f"duplicate top-level keys: {keys}"
+
+
+def test_invalid_policy_fails_closed(tmp_path):
+    from conftest import make_config
+
+    from mini_agent.config import apply_policy
+
+    config = make_config(tmp_path)
+    policy = tmp_path / "policy.yaml"
+    policy.write_text("budget:\n  maxStepsPerTurn: not-a-number\n", encoding="utf-8")
+    config.policy_path = policy
+    with pytest.raises(ValueError):
+        apply_policy(config)
+
+
+def test_migrations_upgrade_existing_rows_to_head(tmp_path, monkeypatch):
+    import sqlite3
+
+    from alembic import command
+    from alembic.config import Config as AlembicConfig
+
+    from mini_agent.db import BACKEND_ROOT
+
+    db_path = tmp_path / "existing.sqlite3"
+    monkeypatch.setenv("MINI_AGENT_DB_URL", f"sqlite:///{db_path}")
+    cfg = AlembicConfig()
+    cfg.set_main_option("script_location", str(BACKEND_ROOT / "migrations"))
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    command.upgrade(cfg, "934e51425f68")
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute(
+            "insert into workspace (id,name,root_path,owner_id,created_at) values (?,?,?,?,?)",
+            ("ws_old", "Old", str(tmp_path / "workspace"), "owner", "2026-01-01"),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    command.upgrade(cfg, "head")
+    connection = sqlite3.connect(db_path)
+    try:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(workspace)")}
+        assert "alias" in columns
+        assert connection.execute("select name from workspace where id='ws_old'").fetchone() == ("Old",)
+        version = connection.execute("select version_num from alembic_version").fetchone()[0]
+        assert version != "934e51425f68"
+    finally:
+        connection.close()

@@ -24,6 +24,10 @@ const zh: Dict = {
   'app.save': '保存',
   'app.close': '关闭',
   'app.delete': '删除',
+  'app.remove': '移除',
+  'app.admin': '管理中心',
+  'app.deleted': '会话已删除',
+  'app.deleteConfirm': '确定删除会话「{title}」？该操作不可撤销。',
   'app.edit': '编辑',
   'app.copy': '复制',
   'app.copied': '已复制',
@@ -48,7 +52,8 @@ const zh: Dict = {
   'app.connection.connecting': '连接中',
   'app.connection.reconnecting': '重连中',
   'app.connection.offline': '已离线',
-  'app.connection.retryHint': '事件流断开，正在自动重连；恢复后会先同步快照，不会重复插入消息。',
+  'app.connection.retryHint':
+    '事件流断开，正在自动重连；恢复后会先同步快照，不会重复插入消息。',
   'app.error': '出错了',
   'app.dismiss': '忽略',
   'app.language': '语言',
@@ -73,11 +78,14 @@ const zh: Dict = {
   'app.daysAgo': '{n} 天前',
   'app.sidebar.collapse': '收起侧边栏',
   'app.sidebar.resize': '调整侧边栏宽度',
-  'info.skills': '最小版本未启用 Skill 管理器。规范中的 Skill 元信息、按需加载与三级作用域已预留在配置与运行时接口中，可在后续版本扩展。',
-  'info.mcp': '最小版本未启用 MCP 管理器。运行时已保留工具权限边界与不可信内容隔离；接入 stdio/HTTP MCP 属于后续扩展。',
+  'info.skills':
+    '最小版本未启用 Skill 管理器。规范中的 Skill 元信息、按需加载与三级作用域已预留在配置与运行时接口中，可在后续版本扩展。',
+  'info.mcp':
+    '最小版本未启用 MCP 管理器。运行时已保留工具权限边界与不可信内容隔离；接入 stdio/HTTP MCP 属于后续扩展。',
 
   'chat.emptyTitle': '开始一段新的对话',
-  'chat.emptySubtitle': '让 Agent 阅读工作区、运行命令、修改文件，或者和你一起拆解一个目标。',
+  'chat.emptySubtitle':
+    '让 Agent 阅读工作区、运行命令、修改文件，或者和你一起拆解一个目标。',
   'chat.emptyHint': '当前使用离线 Mock 模型，可直接体验全部流程。',
   'chat.prompt.1': '介绍一下当前工作区的内容',
   'chat.prompt.2': '演示一次需要权限确认的命令',
@@ -108,7 +116,8 @@ const zh: Dict = {
   'chat.toolCopyOutput': '复制输出 JSON',
   'chat.toolNoOutput': '暂无输出',
   'chat.retryBadge': '已自动重试',
-  'chat.retryHint': '模型流式输出中断，已丢弃不完整内容并重新请求（第 {n} 次）。',
+  'chat.retryHint':
+    '模型流式输出中断，已丢弃不完整内容并重新请求（第 {n} 次）。',
   'chat.editTitle': '编辑消息并创建分支',
   'chat.editHint': '保存后会从这条消息创建新分支，原会话历史不受影响。',
   'chat.fork': 'Fork',
@@ -137,6 +146,9 @@ const zh: Dict = {
   'chat.reasoning.medium': '中',
   'chat.reasoning.high': '高',
   'chat.reasoning.xhigh': '极高',
+  'chat.reasoning.max': '最高',
+  'chat.reasoning.minimal': '最小',
+  'chat.reasoning.ultra': '超强',
   'chat.context': '上下文',
   'chat.contextUsage': '{used} / {total} ({percent}%)',
   'chat.contextDetails': '上下文明细',
@@ -150,7 +162,8 @@ const zh: Dict = {
   'chat.usage.overLimit': '上下文已超过 80%，建议执行 /compact',
   'chat.draftSaved': '草稿会自动保存在本地',
   'chat.noModel': '尚未配置模型',
-  'chat.noModelHint': '请先在设置中配置服务商和模型，或设置 DEEPSEEK_API_KEY 后重启。',
+  'chat.noModelHint':
+    '请先在设置中配置服务商和模型，或设置 DEEPSEEK_API_KEY 后重启。',
   'chat.noModelCta': '打开设置',
   'chat.paused': '会话已暂停',
   'chat.pausedHint': '模型流与工具已中止，未完成的工具调用已补齐结果。',
@@ -236,12 +249,14 @@ const zh: Dict = {
   'settings.general.language': '界面语言',
   'settings.general.theme': '主题',
   'settings.general.notifications': '桌面通知',
-  'settings.general.notificationsHint': '会话完成、等待回答或需要授权时提醒；仅在页面隐藏时发送。',
+  'settings.general.notificationsHint':
+    '会话完成、等待回答或需要授权时提醒；仅在页面隐藏时发送。',
   'settings.general.shortcuts': '快捷键',
   'settings.models.default': '默认模型',
   'settings.models.defaultHint': '仅影响新会话；当前会话可在输入区切换。',
   'settings.models.providers': '服务商',
-  'settings.models.keyHint': 'API Key 只显示掩码。真实密钥通过环境变量或 data/secrets.yaml 注入，不会写入前端配置。',
+  'settings.models.keyHint':
+    'API Key 只显示掩码。真实密钥通过环境变量或 data/secrets.yaml 注入，不会写入前端配置。',
   'settings.models.configured': '已配置',
   'settings.models.notConfigured': '未配置',
   'settings.models.rawConfig': '配置文件',
@@ -275,7 +290,8 @@ const zh: Dict = {
   'settings.data.shareExpiry': '有效期 72 小时，可随时撤销',
   'settings.data.revoke': '撤销',
   'settings.data.debug': '调试：模型请求前缀',
-  'settings.data.debugHint': '用于验证前缀缓存稳定性；hash 相同代表请求前缀一致。',
+  'settings.data.debugHint':
+    '用于验证前缀缓存稳定性；hash 相同代表请求前缀一致。',
   'settings.data.debugEmpty': '还没有模型请求记录',
   'settings.data.recovery': '重启恢复记录',
   'settings.data.noRecovery': '没有中断记录',
@@ -284,7 +300,8 @@ const zh: Dict = {
   'settings.about.configPath': '配置文件路径',
   'settings.about.dataDir': '数据目录',
   'settings.about.workspaceRoot': '默认工作区',
-  'settings.about.guide': '本应用遵循 create-common-agent-guide.md 的验收清单，最小版本说明见 README。',
+  'settings.about.guide':
+    '本应用遵循 create-common-agent-guide.md 的验收清单，最小版本说明见 README。',
   'settings.saveFailed': '保存失败',
   'settings.saved': '设置已保存',
   'settings.notifications.grant': '请求通知权限',
@@ -315,7 +332,12 @@ const zh: Dict = {
   'files.insert': '引用到输入框',
   'files.root': '根目录',
   'files.up': '上一级',
-  'files.search': '搜索文件',
+  'files.search': '搜索文件内容',
+  'files.searchContent': '按内容搜索',
+  'files.searchName': '按文件名搜索',
+  'files.content': '内容',
+  'files.name': '名称',
+  'files.noResults': '没有匹配结果',
 
   'share.readonly': '只读分享',
   'share.expires': '有效期至 {date}',
@@ -347,6 +369,21 @@ const zh: Dict = {
   'toast.reconnected': '连接已恢复',
   'toast.streamLost': '实时连接中断，正在重试',
   'toast.notificationPermission': '通知权限已开启',
+  'chat.attachments': '附件',
+  'chat.customCommand': '自定义命令',
+  'chat.customCommandHint':
+    '输入参数后运行命令，发给 Agent 前可预览最终 Prompt。',
+  'chat.commandArguments': '参数',
+  'chat.commandArgumentsHint': '例如：src/app.ts 安全 性能',
+  'chat.commandPreview': '最终 Prompt 预览',
+  'chat.runCommand': '运行命令',
+  'chat.commandStarted': '命令已发送',
+  'chat.filesUndone': '已撤销 {n} 个文件修改',
+  'chat.filesRedone': '已重做 {n} 个文件修改',
+  'chat.noFileChanges': '该轮没有可撤销的文件修改',
+  'chat.diff': '文件 Diff',
+  'chat.undoFiles': '撤销本轮文件修改',
+  'chat.redoFiles': '重做本轮文件修改',
   'toast.notificationDenied': '通知权限被拒绝',
 };
 
@@ -372,6 +409,10 @@ const en: Dict = {
   'app.save': 'Save',
   'app.close': 'Close',
   'app.delete': 'Delete',
+  'app.remove': 'Remove',
+  'app.admin': 'Admin',
+  'app.deleted': 'Session deleted',
+  'app.deleteConfirm': 'Delete session "{title}"? This cannot be undone.',
   'app.edit': 'Edit',
   'app.copy': 'Copy',
   'app.copied': 'Copied',
@@ -396,7 +437,8 @@ const en: Dict = {
   'app.connection.connecting': 'Connecting',
   'app.connection.reconnecting': 'Reconnecting',
   'app.connection.offline': 'Offline',
-  'app.connection.retryHint': 'Event stream disconnected. Reconnecting and resyncing snapshots without duplicating messages.',
+  'app.connection.retryHint':
+    'Event stream disconnected. Reconnecting and resyncing snapshots without duplicating messages.',
   'app.error': 'Something went wrong',
   'app.dismiss': 'Dismiss',
   'app.language': 'Language',
@@ -421,18 +463,24 @@ const en: Dict = {
   'app.daysAgo': '{n}d ago',
   'app.sidebar.collapse': 'Collapse sidebar',
   'app.sidebar.resize': 'Resize sidebar',
-  'info.skills': 'The minimal build does not enable the Skill manager. Skill metadata, progressive loading and three scopes are reserved for a later milestone.',
-  'info.mcp': 'The minimal build does not enable the MCP manager. Tool permission boundaries and untrusted-content isolation are already enforced.',
+  'info.skills':
+    'The minimal build does not enable the Skill manager. Skill metadata, progressive loading and three scopes are reserved for a later milestone.',
+  'info.mcp':
+    'The minimal build does not enable the MCP manager. Tool permission boundaries and untrusted-content isolation are already enforced.',
 
   'chat.emptyTitle': 'Start a new conversation',
-  'chat.emptySubtitle': 'Let the agent read your workspace, run commands, edit files, or plan a goal with you.',
-  'chat.emptyHint': 'The offline mock model is active. You can try every flow immediately.',
+  'chat.emptySubtitle':
+    'Let the agent read your workspace, run commands, edit files, or plan a goal with you.',
+  'chat.emptyHint':
+    'The offline mock model is active. You can try every flow immediately.',
   'chat.prompt.1': 'Describe what is in this workspace',
   'chat.prompt.2': 'Demo a command that needs permission',
   'chat.prompt.3': 'Start a background task and report the result',
   'chat.prompt.4': 'Help me define an acceptance-ready goal',
-  'chat.composer.placeholder': 'Message the agent… type / for commands, @ to reference files',
-  'chat.composer.placeholderRunning': 'Keep typing: queue a message or steer the run…',
+  'chat.composer.placeholder':
+    'Message the agent… type / for commands, @ to reference files',
+  'chat.composer.placeholderRunning':
+    'Keep typing: queue a message or steer the run…',
   'chat.send': 'Send',
   'chat.stop': 'Stop',
   'chat.queue': 'Queue',
@@ -456,9 +504,11 @@ const en: Dict = {
   'chat.toolCopyOutput': 'Copy output JSON',
   'chat.toolNoOutput': 'No output yet',
   'chat.retryBadge': 'Retried',
-  'chat.retryHint': 'The model stream was interrupted. Partial output was discarded and the request retried (attempt {n}).',
+  'chat.retryHint':
+    'The model stream was interrupted. Partial output was discarded and the request retried (attempt {n}).',
   'chat.editTitle': 'Edit message and branch',
-  'chat.editHint': 'Saving creates a new branch from this message without changing the original history.',
+  'chat.editHint':
+    'Saving creates a new branch from this message without changing the original history.',
   'chat.fork': 'Fork',
   'chat.forked': 'Branch session created',
   'chat.editDone': 'Branch created and message re-sent',
@@ -468,8 +518,10 @@ const en: Dict = {
   'chat.tokensAfter': 'After',
   'chat.covered': 'Covered through seq {n}',
   'chat.attached': 'Attached file content: {name}',
-  'chat.attachUnsupported': 'Only text attachments are supported in the minimal build',
-  'chat.pasteUnsupported': 'Pasted images are not supported in the minimal build',
+  'chat.attachUnsupported':
+    'Only text attachments are supported in the minimal build',
+  'chat.pasteUnsupported':
+    'Pasted images are not supported in the minimal build',
   'chat.slash': 'Commands',
   'chat.files': 'Reference a file',
   'chat.noFiles': 'No matching files',
@@ -485,6 +537,9 @@ const en: Dict = {
   'chat.reasoning.medium': 'Medium',
   'chat.reasoning.high': 'High',
   'chat.reasoning.xhigh': 'Extra high',
+  'chat.reasoning.max': 'Max',
+  'chat.reasoning.minimal': 'Minimal',
+  'chat.reasoning.ultra': 'Ultra',
   'chat.context': 'Context',
   'chat.contextUsage': '{used} / {total} ({percent}%)',
   'chat.contextDetails': 'Context details',
@@ -498,13 +553,16 @@ const en: Dict = {
   'chat.usage.overLimit': 'Context is over 80%, consider /compact',
   'chat.draftSaved': 'Drafts are saved locally',
   'chat.noModel': 'No model configured',
-  'chat.noModelHint': 'Configure a provider and model in Settings, or set DEEPSEEK_API_KEY and restart.',
+  'chat.noModelHint':
+    'Configure a provider and model in Settings, or set DEEPSEEK_API_KEY and restart.',
   'chat.noModelCta': 'Open settings',
   'chat.paused': 'Session paused',
-  'chat.pausedHint': 'Model stream and tools were stopped. Every tool call has a result.',
+  'chat.pausedHint':
+    'Model stream and tools were stopped. Every tool call has a result.',
   'chat.resume': 'Resume',
   'chat.errorTitle': 'Session error',
-  'chat.errorHint': 'You can keep chatting, or inspect the request ID in the logs.',
+  'chat.errorHint':
+    'You can keep chatting, or inspect the request ID in the logs.',
   'chat.recovered': 'Recovered after service restart',
   'chat.goal.set': 'Set goal',
   'chat.goal.progress': '{done}/{total} done',
@@ -584,12 +642,15 @@ const en: Dict = {
   'settings.general.language': 'Language',
   'settings.general.theme': 'Theme',
   'settings.general.notifications': 'Desktop notifications',
-  'settings.general.notificationsHint': 'Notify when a turn finishes, waits for input, or needs permission. Only while the page is hidden.',
+  'settings.general.notificationsHint':
+    'Notify when a turn finishes, waits for input, or needs permission. Only while the page is hidden.',
   'settings.general.shortcuts': 'Shortcuts',
   'settings.models.default': 'Default model',
-  'settings.models.defaultHint': 'Affects new sessions only. Switch per-session from the composer.',
+  'settings.models.defaultHint':
+    'Affects new sessions only. Switch per-session from the composer.',
   'settings.models.providers': 'Providers',
-  'settings.models.keyHint': 'API keys are masked. Real secrets come from environment variables or data/secrets.yaml and never enter the browser config.',
+  'settings.models.keyHint':
+    'API keys are masked. Real secrets come from environment variables or data/secrets.yaml and never enter the browser config.',
   'settings.models.configured': 'Configured',
   'settings.models.notConfigured': 'Not configured',
   'settings.models.rawConfig': 'Config file',
@@ -616,14 +677,16 @@ const en: Dict = {
   'settings.permissions.interaction': 'Interaction',
   'settings.permissions.task': 'Task',
   'settings.data.export': 'Export current session',
-  'settings.data.exportHint': 'Exports are redacted and never contain a full API key.',
+  'settings.data.exportHint':
+    'Exports are redacted and never contain a full API key.',
   'settings.data.share': 'Read-only sharing',
   'settings.data.createShare': 'Create share link',
   'settings.data.noShares': 'No share links yet',
   'settings.data.shareExpiry': 'Valid for 72 hours, revocable anytime',
   'settings.data.revoke': 'Revoke',
   'settings.data.debug': 'Debug: model request prefixes',
-  'settings.data.debugHint': 'Used to verify prefix-cache stability. Equal hashes mean equal request prefixes.',
+  'settings.data.debugHint':
+    'Used to verify prefix-cache stability. Equal hashes mean equal request prefixes.',
   'settings.data.debugEmpty': 'No model requests yet',
   'settings.data.recovery': 'Restart recovery',
   'settings.data.noRecovery': 'No interrupted work',
@@ -632,7 +695,8 @@ const en: Dict = {
   'settings.about.configPath': 'Config path',
   'settings.about.dataDir': 'Data directory',
   'settings.about.workspaceRoot': 'Default workspace',
-  'settings.about.guide': 'This app follows the acceptance checklist in create-common-agent-guide.md. See README for minimal-build scope.',
+  'settings.about.guide':
+    'This app follows the acceptance checklist in create-common-agent-guide.md. See README for minimal-build scope.',
   'settings.saveFailed': 'Failed to save',
   'settings.saved': 'Settings saved',
   'settings.notifications.grant': 'Request notification permission',
@@ -663,7 +727,12 @@ const en: Dict = {
   'files.insert': 'Insert reference',
   'files.root': 'Root',
   'files.up': 'Up',
-  'files.search': 'Search files',
+  'files.search': 'Search file contents',
+  'files.searchContent': 'Search contents',
+  'files.searchName': 'Search names',
+  'files.content': 'Content',
+  'files.name': 'Name',
+  'files.noResults': 'No matches',
 
   'share.readonly': 'Read-only share',
   'share.expires': 'Expires {date}',
@@ -695,19 +764,42 @@ const en: Dict = {
   'toast.reconnected': 'Connection restored',
   'toast.streamLost': 'Live connection lost; retrying',
   'toast.notificationPermission': 'Notifications enabled',
+  'chat.attachments': 'Attachments',
+  'chat.customCommand': 'Custom command',
+  'chat.customCommandHint':
+    'Enter arguments and preview the final prompt before running.',
+  'chat.commandArguments': 'Arguments',
+  'chat.commandArgumentsHint': 'e.g. src/app.ts security performance',
+  'chat.commandPreview': 'Final prompt preview',
+  'chat.runCommand': 'Run command',
+  'chat.commandStarted': 'Command sent',
+  'chat.filesUndone': 'Reverted changes to {n} file(s)',
+  'chat.filesRedone': 'Reapplied changes to {n} file(s)',
+  'chat.noFileChanges': 'No file changes to revert in this turn',
+  'chat.diff': 'File diff',
+  'chat.undoFiles': 'Undo file changes from this turn',
+  'chat.redoFiles': 'Redo file changes from this turn',
   'toast.notificationDenied': 'Notification permission denied',
 };
 
 const dictionaries: Record<Language, Dict> = { 'zh-CN': zh, 'en-US': en };
 
-export function translate(language: Language, key: string, vars?: Record<string, string | number>): string {
-  const template = dictionaries[language][key] ?? dictionaries['zh-CN'][key] ?? key;
+export function translate(
+  language: Language,
+  key: string,
+  vars?: Record<string, string | number>,
+): string {
+  const template =
+    dictionaries[language][key] ?? dictionaries['zh-CN'][key] ?? key;
   if (!vars) return template;
-  return template.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? `{${name}}`));
+  return template.replace(/\{(\w+)\}/g, (_, name: string) =>
+    String(vars[name] ?? `{${name}}`),
+  );
 }
 
 export function createTranslator(language: Language) {
-  return (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
+  return (key: string, vars?: Record<string, string | number>) =>
+    translate(language, key, vars);
 }
 
 export type Translator = ReturnType<typeof createTranslator>;
@@ -738,7 +830,11 @@ export function formatDateTime(value: string, language: Language): string {
   }
 }
 
-export function relativeTime(value: string, language: Language, now = Date.now()): string {
+export function relativeTime(
+  value: string,
+  language: Language,
+  now = Date.now(),
+): string {
   const timestamp = new Date(value).getTime();
   if (!Number.isFinite(timestamp)) return '';
   const delta = Math.max(0, now - timestamp);
@@ -746,8 +842,13 @@ export function relativeTime(value: string, language: Language, now = Date.now()
   const hour = 60 * minute;
   const day = 24 * hour;
   if (delta < minute) return translate(language, 'app.justNow');
-  if (delta < hour) return translate(language, 'app.minutesAgo', { n: Math.floor(delta / minute) });
-  if (delta < day) return translate(language, 'app.hoursAgo', { n: Math.floor(delta / hour) });
-  if (delta < 7 * day) return translate(language, 'app.daysAgo', { n: Math.floor(delta / day) });
+  if (delta < hour)
+    return translate(language, 'app.minutesAgo', {
+      n: Math.floor(delta / minute),
+    });
+  if (delta < day)
+    return translate(language, 'app.hoursAgo', { n: Math.floor(delta / hour) });
+  if (delta < 7 * day)
+    return translate(language, 'app.daysAgo', { n: Math.floor(delta / day) });
   return formatDateTime(value, language);
 }

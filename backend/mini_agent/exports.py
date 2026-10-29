@@ -12,7 +12,7 @@ from .config import AppConfig
 from .events import EventStore
 from .models import Message, Session, Turn, utcnow
 from .security import redact_object, redact_text
-from .serialization import build_snapshot
+from .serialization import build_snapshot, parse_json
 
 
 async def export_session(
@@ -33,14 +33,37 @@ async def export_session(
     session = await db.get(Session, session_id)
     assert session is not None
     if fmt == "json":
+        raw_rows = (
+            (
+                await db.execute(
+                    select(Message).where(Message.session_id == session_id).order_by(Message.seq.asc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+        raw_messages = [
+            {
+                "id": row.id,
+                "turnId": row.turn_id,
+                "seq": row.seq,
+                "role": row.role,
+                "content": parse_json(row.content_json),
+                "raw": parse_json(row.raw_json),
+                "status": row.status,
+                "createdAt": row.created_at,
+            }
+            for row in raw_rows
+        ]
         payload = {
-            "formatVersion": 1,
+            "formatVersion": 2,
             "exportedAt": utcnow(),
             "session": snapshot["session"],
             "workspace": snapshot["workspace"],
             "agent": snapshot["agent"],
             "systemPrompt": snapshot.get("systemPrompt"),
             "messages": snapshot["messages"],
+            "rawMessages": raw_messages,
             "turns": snapshot["turns"],
             "toolCalls": snapshot["toolCalls"] if include_tools else [],
             "queue": snapshot["queue"],

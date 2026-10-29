@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import signal
@@ -103,6 +104,8 @@ class TaskManager:
             self._processes[task_id] = process
             output = bytearray()
             assert process.stdout is not None
+            started = time.monotonic()
+            timed_out = False
             while True:
                 chunk = await process.stdout.read(8192)
                 if not chunk:
@@ -112,12 +115,23 @@ class TaskManager:
                     output.extend(b"\n[output capped at 5MB]\n")
                     await self._kill(process)
                     break
+                if time.monotonic() - started > self.config.tasks.max_duration_seconds:
+                    timed_out = True
+                    output.extend(b"\n[task exceeded max duration]\n")
+                    await self._kill(process)
+                    break
             returncode = await process.wait()
             text = output.decode("utf-8", errors="replace")
             text = redact_text(text, self.config.secret_values())
             output_path.write_text(text, encoding="utf-8")
             cancelled = task_id in self._cancel_requested
-            status = "cancelled" if cancelled else ("succeeded" if returncode == 0 else "failed")
+            status = (
+                "cancelled"
+                if cancelled
+                else "timeout"
+                if timed_out
+                else ("succeeded" if returncode == 0 else "failed")
+            )
             summary = self._summarize(text, returncode, status)
             await self._update(
                 task_id,
@@ -125,7 +139,13 @@ class TaskManager:
                 progress=100,
                 output_ref=str(output_path.relative_to(self.config.data_dir)),
                 summary=summary,
-                error=None if status == "succeeded" else f"退出码 {returncode}",
+                error=(
+                    None
+                    if status == "succeeded"
+                    else "后台任务超过最大时长"
+                    if status == "timeout"
+                    else f"退出码 {returncode}"
+                ),
             )
             await self._notify(task_id, status, summary)
         except asyncio.CancelledError:
@@ -191,6 +211,80 @@ class TaskManager:
             await self.on_complete(task_id, session_id, status, summary)
         except Exception:  # noqa: BLE001
             logger.exception("task completion callback failed", extra={"task_id": task_id})
+
+    async def start_coroutine(
+        self,
+        *,
+        session_id: str,
+        tool_call_id: str | None,
+        name: str,
+        coroutine: Awaitable[Any],
+    ) -> Task:
+        """Track an arbitrary long-running coroutine as a persisted task."""
+
+        task = Task(
+            session_id=session_id,
+            tool_call_id=tool_call_id,
+            name=name,
+            status="queued",
+            progress=0,
+        )
+        async with self.db.session() as db:
+            db.add(task)
+            await db.flush()
+            await self.events.emit(
+                db,
+                session_id,
+                "task.updated",
+                {
+                    "task": {
+                        "id": task.id,
+                        "name": task.name,
+                        "status": task.status,
+                        "progress": task.progress,
+                    }
+                },
+            )
+            await db.commit()
+        waiter = asyncio.Event()
+        self._waiters[task.id] = waiter
+
+        async def runner() -> None:
+            await self._update(task.id, status="running", progress=10)
+            try:
+                result = await coroutine
+                summary = (
+                    json.dumps(result, ensure_ascii=False)[:20_000]
+                    if not isinstance(result, str)
+                    else result[:20_000]
+                )
+                output_dir = self.config.data_dir / "artifacts" / task.id
+                output_dir.mkdir(parents=True, exist_ok=True)
+                output_path = output_dir / "result.json"
+                output_path.write_text(summary, encoding="utf-8")
+                await self._update(
+                    task.id,
+                    status="succeeded",
+                    progress=100,
+                    summary=summary[:4_000],
+                    output_ref=str(output_path.relative_to(self.config.data_dir)),
+                )
+                await self._notify(task.id, "succeeded", summary)
+            except asyncio.CancelledError:
+                await self._update(task.id, status="cancelled", progress=100, error="任务被取消")
+                await self._notify(task.id, "cancelled", "任务被取消")
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("background coroutine failed", extra={"task_id": task.id})
+                await self._update(task.id, status="failed", progress=100, error=redact_text(str(exc)))
+                await self._notify(task.id, "failed", str(exc))
+            finally:
+                waiter.set()
+
+        asyncio_task = asyncio.create_task(runner(), name=f"task:{task.id}")
+        self._runners[task.id] = asyncio_task
+        asyncio_task.add_done_callback(lambda _task: self._waiters.pop(task.id, None))
+        return task
 
     async def cancel(self, task_id: str) -> Task | None:
         async with self.db.session() as db:

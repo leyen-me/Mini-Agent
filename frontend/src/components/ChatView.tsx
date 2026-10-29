@@ -40,8 +40,12 @@ interface Props {
   mobile: boolean;
   sidebarCollapsed: boolean;
   onToggleSidebar: () => void;
+  onCycleTheme: () => void;
   onRename: (title: string) => Promise<void>;
-  onAnswer: (interactionId: string, answer: Record<string, unknown>) => Promise<void>;
+  onAnswer: (
+    interactionId: string,
+    answer: Record<string, unknown>,
+  ) => Promise<void>;
   onResume: () => void;
   onRetry: () => void;
   onOpenSettings: () => void;
@@ -51,22 +55,44 @@ interface Props {
   onCompact: () => void;
   onEditMessage: (message: ChatMessage) => void;
   onFork: (messageId: string) => void;
+  onUndo: (turnId: string) => void;
+  onRedo: (turnId: string) => void;
+  onSelectSession: (sessionId: string) => void;
   onSuggestion: (prompt: string) => void;
   onDismissRetry: () => void;
   onDismissError: () => void;
   errorDismissed: boolean;
 }
 
-function EmptyHero({ config, onSuggestion, onOpenSettings }: { config: PublicConfig; onSuggestion: (prompt: string) => void; onOpenSettings: () => void }) {
+function EmptyHero({
+  config,
+  onSuggestion,
+  onOpenSettings,
+}: {
+  config: PublicConfig;
+  onSuggestion: (prompt: string) => void;
+  onOpenSettings: () => void;
+}) {
   const { t } = useUi();
-  const prompts = ['chat.prompt.1', 'chat.prompt.2', 'chat.prompt.3', 'chat.prompt.4'];
+  const prompts = [
+    'chat.prompt.1',
+    'chat.prompt.2',
+    'chat.prompt.3',
+    'chat.prompt.4',
+  ];
   if (!config.model_configured) {
     return (
       <section className="empty-hero">
-        <div className="hero-mark"><Sparkles size={30} aria-hidden="true" /></div>
+        <div className="hero-mark">
+          <Sparkles size={30} aria-hidden="true" />
+        </div>
         <h1>{t('chat.noModel')}</h1>
         <p>{t('chat.noModelHint')}</p>
-        <button type="button" className="primary-button" onClick={onOpenSettings}>
+        <button
+          type="button"
+          className="primary-button"
+          onClick={onOpenSettings}
+        >
           <Settings size={15} aria-hidden="true" /> {t('chat.noModelCta')}
         </button>
       </section>
@@ -74,12 +100,19 @@ function EmptyHero({ config, onSuggestion, onOpenSettings }: { config: PublicCon
   }
   return (
     <section className="empty-hero">
-      <div className="hero-mark"><Terminal size={30} aria-hidden="true" /></div>
+      <div className="hero-mark">
+        <Terminal size={30} aria-hidden="true" />
+      </div>
       <h1>{t('chat.emptyTitle')}</h1>
       <p>{t('chat.emptySubtitle')}</p>
       <div className="prompt-grid">
         {prompts.map((key) => (
-          <button type="button" className="prompt-card" key={key} onClick={() => onSuggestion(t(key))}>
+          <button
+            type="button"
+            className="prompt-card"
+            key={key}
+            onClick={() => onSuggestion(t(key))}
+          >
             <MessageSquare size={15} aria-hidden="true" />
             <span>{t(key)}</span>
           </button>
@@ -105,6 +138,7 @@ export function ChatView({
   mobile,
   sidebarCollapsed,
   onToggleSidebar,
+  onCycleTheme,
   onRename,
   onAnswer,
   onResume,
@@ -116,6 +150,9 @@ export function ChatView({
   onCompact,
   onEditMessage,
   onFork,
+  onUndo,
+  onRedo,
+  onSelectSession,
   onSuggestion,
   onDismissRetry,
   onDismissError,
@@ -127,7 +164,8 @@ export function ChatView({
   const [stick, setStick] = useState(true);
   const [showJump, setShowJump] = useState(false);
   const messages = snapshot?.messages ?? [];
-  const empty = Boolean(snapshot) && messages.length === 0 && interactions.length === 0;
+  const empty =
+    Boolean(snapshot) && messages.length === 0 && interactions.length === 0;
   const lastMessage = messages[messages.length - 1];
   const contentLength = lastMessage?.content.text.length ?? 0;
 
@@ -145,7 +183,8 @@ export function ChatView({
   const onScroll = () => {
     const element = scrollRef.current;
     if (!element) return;
-    const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
+    const distance =
+      element.scrollHeight - element.scrollTop - element.clientHeight;
     const nextStick = distance < 90;
     setStick(nextStick);
     setShowJump(!nextStick);
@@ -190,11 +229,17 @@ export function ChatView({
         onExport={onExport}
         onCompact={onCompact}
         onToggleSidebar={onToggleSidebar}
+        onCycleTheme={onCycleTheme}
         mobile={mobile}
         sidebarCollapsed={sidebarCollapsed}
+        config={config}
       />
 
-      <div className={`chat-scroll ${empty ? 'empty-scroll' : ''}`} ref={scrollRef} onScroll={onScroll}>
+      <div
+        className={`chat-scroll ${empty ? 'empty-scroll' : ''}`}
+        ref={scrollRef}
+        onScroll={onScroll}
+      >
         {loading && !snapshot ? (
           <div className="loading-screen" role="status" aria-live="polite">
             <span className="sr-only">{t('chat.processing')}</span>
@@ -218,7 +263,11 @@ export function ChatView({
           <div className="banner paused-banner" role="status">
             <SessionStatusBadge status="paused" />
             <span>{t('chat.pausedHint')}</span>
-            <button type="button" className="secondary-button" onClick={onResume}>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onResume}
+            >
               <Play size={14} aria-hidden="true" /> {t('chat.resume')}
             </button>
           </div>
@@ -228,12 +277,22 @@ export function ChatView({
           <div className="banner error-banner" role="alert">
             <AlertTriangle size={15} aria-hidden="true" />
             <span>
-              <strong>{t('chat.errorTitle')}</strong> {snapshot.session.lastError ?? t('chat.errorHint')}
+              <strong>{t('chat.errorTitle')}</strong>{' '}
+              {snapshot.session.lastError ?? t('chat.errorHint')}
             </span>
-            <button type="button" className="secondary-button" onClick={onResume}>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onResume}
+            >
               <Play size={14} aria-hidden="true" /> {t('chat.resume')}
             </button>
-            <button type="button" className="icon-button" onClick={onDismissError} aria-label={t('app.dismiss')}>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={onDismissError}
+              aria-label={t('app.dismiss')}
+            >
               ×
             </button>
           </div>
@@ -243,7 +302,12 @@ export function ChatView({
           <div className="banner retry-banner" role="status">
             <RefreshIcon />
             <span>{retryNotice}</span>
-            <button type="button" className="icon-button" onClick={onDismissRetry} aria-label={t('app.dismiss')}>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={onDismissRetry}
+              aria-label={t('app.dismiss')}
+            >
               ×
             </button>
           </div>
@@ -251,7 +315,11 @@ export function ChatView({
 
         {empty ? (
           <div className="empty-center">
-            <EmptyHero config={config} onSuggestion={onSuggestion} onOpenSettings={onOpenSettings} />
+            <EmptyHero
+              config={config}
+              onSuggestion={onSuggestion}
+              onOpenSettings={onOpenSettings}
+            />
             {composer}
           </div>
         ) : (
@@ -261,6 +329,10 @@ export function ChatView({
                 snapshot={snapshot}
                 onEditMessage={onEditMessage}
                 onFork={onFork}
+                onUndo={onUndo}
+                onRedo={onRedo}
+                scrollRef={scrollRef}
+                onSelectSession={onSelectSession}
               />
             )}
             <div ref={bottomRef} />
@@ -273,7 +345,10 @@ export function ChatView({
           type="button"
           className="jump-bottom"
           onClick={() => {
-            bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            bottomRef.current?.scrollIntoView({
+              behavior: 'smooth',
+              block: 'end',
+            });
             setStick(true);
             setShowJump(false);
           }}

@@ -50,6 +50,7 @@ def message_dto(message: Message) -> dict[str, Any]:
             "text": content.get("text", ""),
             "reasoning": content.get("reasoning", ""),
             "toolCalls": content.get("tool_calls", []),
+            "attachments": content.get("attachments", []),
         },
         "status": message.status,
         "clientMessageId": message.client_message_id,

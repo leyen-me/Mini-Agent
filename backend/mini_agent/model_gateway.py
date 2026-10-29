@@ -27,6 +27,16 @@ logger = logging.getLogger(__name__)
 
 RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
 MAX_RETRIES = 3
+DEEPSEEK_THINKING_HINTS = ("flash", "v4")
+DEEPSEEK_EFFORT_MAP = {
+    "minimal": "low",
+    "low": "low",
+    "medium": "high",
+    "high": "high",
+    "xhigh": "max",
+    "max": "max",
+    "ultra": "max",
+}
 
 
 @dataclass(slots=True)
@@ -65,6 +75,7 @@ class ModelRequest:
     prefix_text: str
     prefix_hash: str
     temperature: float = 0.2
+    structured_output: dict[str, Any] | None = None
 
 
 @dataclass(slots=True)
@@ -155,6 +166,7 @@ class OpenAICompatibleGateway(BaseGateway):
         client: httpx.AsyncClient | None = None,
         sleep=asyncio.sleep,
         rng: random.Random | None = None,
+        header_resolver=None,
     ) -> None:
         super().__init__(config)
         self._client = client
@@ -162,6 +174,7 @@ class OpenAICompatibleGateway(BaseGateway):
         self._sleep = sleep
         self._rng = rng or random.Random()
         self._mock = MockGateway(config)
+        self._header_resolver = header_resolver
 
     async def aclose(self) -> None:
         if self._owns_client and self._client is not None:
@@ -219,6 +232,8 @@ class OpenAICompatibleGateway(BaseGateway):
                     connect=15, read=self.config.server.request_timeout_seconds, write=30, pool=15
                 ),
                 follow_redirects=False,
+                proxy=self.config.network.proxy or None,
+                verify=self.config.network.ca_bundle or True,
             )
         return self._client
 
@@ -226,8 +241,24 @@ class OpenAICompatibleGateway(BaseGateway):
         self, provider: ProviderConfig, model: ModelConfig, request: ModelRequest
     ) -> AsyncIterator[ModelChunk]:
         headers = {"Content-Type": "application/json", "Accept": "text/event-stream", **provider.headers}
-        if provider.api_key:
+        if self._header_resolver is not None:
+            headers.update(await self._header_resolver(provider))
+        elif provider.api_key:
             headers["Authorization"] = f"Bearer {provider.api_key}"
+        if provider.protocol == "anthropic":
+            if request.structured_output:
+                raise ModelError(
+                    "UNSUPPORTED_FEATURE",
+                    "Anthropic 适配器暂不支持结构化输出；请使用 OpenAI Chat/Responses 或关闭该 Agent 的结构化输出",
+                    retryable=False,
+                )
+            async for chunk in self._stream_anthropic(provider, model, request, headers):
+                yield chunk
+            return
+        if provider.protocol == "openai-responses":
+            async for chunk in self._stream_responses(provider, model, request, headers):
+                yield chunk
+            return
         payload: dict[str, Any] = {
             "model": model.id,
             "messages": request.messages,
@@ -239,14 +270,25 @@ class OpenAICompatibleGateway(BaseGateway):
         if request.tools:
             payload["tools"] = request.tools
             payload["tool_choice"] = "auto"
-        # DeepSeek selects thinking through the model id; sending an OpenAI-only
-        # reasoning_effort field would be rejected. Other OpenAI-compatible providers
-        # can opt in by naming their model levels accordingly.
-        if (
-            request.reasoning_level != "off"
-            and "deepseek" not in provider.id.lower()
-            and "deepseek" not in provider.base_url.lower()
-        ):
+        if request.structured_output:
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "agent_output",
+                    "strict": True,
+                    "schema": request.structured_output,
+                },
+            }
+        if _deepseek_thinking_model(provider, model):
+            # DeepSeek V4/Flash exposes an explicit thinking switch; legacy
+            # deepseek-chat/deepseek-reasoner choose thinking by model id and must
+            # not receive these OpenAI-style fields.
+            if request.reasoning_level == "off":
+                payload["thinking"] = {"type": "disabled"}
+            else:
+                payload["thinking"] = {"type": "enabled"}
+                payload["reasoning_effort"] = DEEPSEEK_EFFORT_MAP.get(request.reasoning_level, "high")
+        elif request.reasoning_level != "off" and not _is_deepseek(provider):
             payload["reasoning_effort"] = request.reasoning_level
 
         base = provider.base_url.rstrip("/")
@@ -360,6 +402,266 @@ class OpenAICompatibleGateway(BaseGateway):
             finish_reason=finish_reason,
         )
 
+    async def _stream_anthropic(
+        self,
+        provider: ProviderConfig,
+        model: ModelConfig,
+        request: ModelRequest,
+        headers: dict[str, str],
+    ) -> AsyncIterator[ModelChunk]:
+        anthropic_headers = {
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+            "anthropic-version": "2023-06-01",
+            **headers,
+        }
+        system_text, messages = _to_anthropic_messages(request.messages)
+        payload: dict[str, Any] = {
+            "model": model.id,
+            "messages": messages,
+            "max_tokens": min(request.max_output, model.max_output),
+            "stream": True,
+            "temperature": request.temperature,
+        }
+        if system_text:
+            payload["system"] = system_text
+        if request.tools:
+            payload["tools"] = [
+                {
+                    "name": item["function"]["name"],
+                    "description": item["function"].get("description", ""),
+                    "input_schema": item["function"].get("parameters", {"type": "object"}),
+                }
+                for item in request.tools
+            ]
+        base = provider.base_url.rstrip("/")
+        url = f"{base}/messages" if base.endswith("/v1") else f"{base}/v1/messages"
+        client = self._client_or_create()
+        content_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        calls: dict[int, dict[str, str]] = {}
+        usage_raw: dict[str, Any] = {}
+        finish_reason = ""
+        async with client.stream("POST", url, headers=anthropic_headers, json=payload) as response:
+            if response.status_code >= 400:
+                body = (await response.aread()).decode("utf-8", errors="replace")
+                raise self._map_http_error(response, body, provider)
+            async for event in _iter_sse_json(response):
+                etype = event.get("type") or ""
+                if etype == "message_start":
+                    usage_raw.update((event.get("message") or {}).get("usage") or {})
+                elif etype == "content_block_start":
+                    index = int(event.get("index", 0))
+                    block = event.get("content_block") or {}
+                    if block.get("type") == "tool_use":
+                        calls[index] = {
+                            "id": str(block.get("id") or ""),
+                            "name": str(block.get("name") or ""),
+                            "arguments": "",
+                        }
+                    elif block.get("type") == "text" and block.get("text"):
+                        content_parts.append(str(block["text"]))
+                        yield ModelChunk(kind="content", text=str(block["text"]))
+                elif etype == "content_block_delta":
+                    index = int(event.get("index", 0))
+                    delta = event.get("delta") or {}
+                    if delta.get("type") == "text_delta":
+                        text = str(delta.get("text") or "")
+                        if text:
+                            content_parts.append(text)
+                            yield ModelChunk(kind="content", text=text)
+                    elif delta.get("type") == "input_json_delta":
+                        calls.setdefault(index, {"id": "", "name": "", "arguments": ""})
+                        calls[index]["arguments"] += str(delta.get("partial_json") or "")
+                    elif delta.get("type") in {"thinking_delta", "reasoning_delta"}:
+                        text = str(delta.get("thinking") or delta.get("text") or "")
+                        if text:
+                            reasoning_parts.append(text)
+                            yield ModelChunk(kind="reasoning", text=text)
+                elif etype == "message_delta":
+                    delta = event.get("delta") or {}
+                    finish_reason = str(delta.get("stop_reason") or finish_reason)
+                    if finish_reason == "max_tokens":
+                        finish_reason = "length"
+                    usage_raw.update(event.get("usage") or {})
+                elif etype == "error":
+                    error = event.get("error") or {}
+                    raise ModelError(
+                        "PROVIDER_ERROR",
+                        f"Anthropic 返回错误：{error.get('message') or 'unknown'}",
+                        raw_code=str(error.get("type") or "anthropic_error"),
+                        retryable=False,
+                    )
+        if not content_parts and not reasoning_parts and not calls and not usage_raw.get("input_tokens"):
+            raise ModelError("EMPTY_RESPONSE", "模型返回了空响应，请稍后重试", retryable=True)
+        tool_calls = [
+            ToolCallRequest(
+                id=item["id"] or f"call_{index}_{int(time.time() * 1000)}",
+                name=item["name"],
+                arguments=item["arguments"] or "{}",
+            )
+            for index, item in sorted(calls.items())
+            if item["name"]
+        ]
+        input_tokens = int(usage_raw.get("input_tokens") or 0)
+        cache_hit = int(usage_raw.get("cache_read_input_tokens") or 0)
+        output_tokens = int(usage_raw.get("output_tokens") or 0)
+        usage = Usage(
+            input_tokens=input_tokens or estimate_tokens(request.prefix_text),
+            output_tokens=output_tokens or estimate_tokens("".join(content_parts)),
+            cache_hit_tokens=cache_hit,
+            # Anthropic input_tokens already excludes cache_read_input_tokens.
+            cache_miss_tokens=input_tokens or estimate_tokens(request.prefix_text),
+            raw=usage_raw,
+        )
+        yield ModelChunk(
+            kind="completed",
+            content="".join(content_parts),
+            reasoning="".join(reasoning_parts),
+            tool_calls=tool_calls,
+            usage=usage,
+            finish_reason=finish_reason,
+        )
+
+    async def _stream_responses(
+        self,
+        provider: ProviderConfig,
+        model: ModelConfig,
+        request: ModelRequest,
+        headers: dict[str, str],
+    ) -> AsyncIterator[ModelChunk]:
+        instructions, input_items = _to_responses_input(request.messages)
+        payload: dict[str, Any] = {
+            "model": model.id,
+            "input": input_items,
+            "stream": True,
+            "max_output_tokens": min(request.max_output, model.max_output),
+        }
+        if instructions:
+            payload["instructions"] = instructions
+        if request.structured_output:
+            payload["text"] = {
+                "format": {
+                    "type": "json_schema",
+                    "name": "agent_output",
+                    "strict": True,
+                    "schema": request.structured_output,
+                }
+            }
+        if request.tools:
+            payload["tools"] = [
+                {
+                    "type": "function",
+                    "name": item["function"]["name"],
+                    "description": item["function"].get("description", ""),
+                    "parameters": item["function"].get("parameters", {"type": "object"}),
+                }
+                for item in request.tools
+            ]
+            payload["tool_choice"] = "auto"
+        base = provider.base_url.rstrip("/")
+        url = f"{base}/responses" if base.endswith("/v1") else f"{base}/v1/responses"
+        client = self._client_or_create()
+        content_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        calls: dict[str, dict[str, str]] = {}
+        current_call: str | None = None
+        usage_raw: dict[str, Any] = {}
+        finish_reason = ""
+        async with client.stream("POST", url, headers=headers, json=payload) as response:
+            if response.status_code >= 400:
+                body = (await response.aread()).decode("utf-8", errors="replace")
+                raise self._map_http_error(response, body, provider)
+            async for event in _iter_sse_json(response):
+                etype = str(event.get("type") or "")
+                if etype in {"response.output_text.delta", "response.text.delta"}:
+                    text = str(event.get("delta") or "")
+                    if text:
+                        content_parts.append(text)
+                        yield ModelChunk(kind="content", text=text)
+                elif etype in {
+                    "response.reasoning_summary_text.delta",
+                    "response.reasoning_text.delta",
+                    "response.reasoning.delta",
+                }:
+                    text = str(event.get("delta") or "")
+                    if text:
+                        reasoning_parts.append(text)
+                        yield ModelChunk(kind="reasoning", text=text)
+                elif etype == "response.output_item.added":
+                    item = event.get("item") or {}
+                    if item.get("type") == "function_call":
+                        call_id = str(item.get("call_id") or item.get("id") or "")
+                        calls[call_id] = {
+                            "id": call_id,
+                            "name": str(item.get("name") or ""),
+                            "arguments": str(item.get("arguments") or ""),
+                        }
+                        current_call = call_id
+                elif etype == "response.function_call_arguments.delta":
+                    call_id = str(event.get("item_id") or event.get("call_id") or current_call or "")
+                    if call_id:
+                        calls.setdefault(call_id, {"id": call_id, "name": "", "arguments": ""})
+                        calls[call_id]["arguments"] += str(event.get("delta") or "")
+                elif etype == "response.output_item.done":
+                    item = event.get("item") or {}
+                    if item.get("type") == "function_call":
+                        call_id = str(item.get("call_id") or item.get("id") or "")
+                        target = calls.setdefault(call_id, {"id": call_id, "name": "", "arguments": ""})
+                        target["name"] = str(item.get("name") or target["name"])
+                        if item.get("arguments"):
+                            target["arguments"] = str(item["arguments"])
+                elif etype == "response.completed":
+                    response_data = event.get("response") or {}
+                    usage_raw = response_data.get("usage") or {}
+                    finish_reason = (
+                        "length"
+                        if response_data.get("status") == "incomplete"
+                        or response_data.get("incomplete_details")
+                        else "stop"
+                    )
+                elif etype in {"response.failed", "error"}:
+                    error = event.get("error") or (event.get("response") or {}).get("error") or {}
+                    raise ModelError(
+                        "PROVIDER_ERROR",
+                        f"OpenAI Responses 错误：{error.get('message') or error or 'unknown'}",
+                        raw_code=str(error.get("code") or "responses_error"),
+                        retryable=False,
+                    )
+        if not content_parts and not reasoning_parts and not calls and not usage_raw.get("input_tokens"):
+            raise ModelError("EMPTY_RESPONSE", "模型返回了空响应，请稍后重试", retryable=True)
+        tool_calls = []
+        for item in calls.values():
+            name = item["name"].rsplit(".", 1)[-1] if item["name"] else ""
+            if not name:
+                continue
+            tool_calls.append(
+                ToolCallRequest(
+                    id=item["id"] or f"call_{int(time.time() * 1000)}",
+                    name=name,
+                    arguments=item["arguments"] or "{}",
+                )
+            )
+        details = usage_raw.get("input_tokens_details") or {}
+        input_tokens = int(usage_raw.get("input_tokens") or 0)
+        cache_hit = int(details.get("cached_tokens") or 0)
+        output_tokens = int(usage_raw.get("output_tokens") or 0)
+        usage = Usage(
+            input_tokens=input_tokens or estimate_tokens(request.prefix_text),
+            output_tokens=output_tokens or estimate_tokens("".join(content_parts)),
+            cache_hit_tokens=cache_hit,
+            cache_miss_tokens=max(0, (input_tokens or estimate_tokens(request.prefix_text)) - cache_hit),
+            raw=usage_raw,
+        )
+        yield ModelChunk(
+            kind="completed",
+            content="".join(content_parts),
+            reasoning="".join(reasoning_parts),
+            tool_calls=tool_calls,
+            usage=usage,
+            finish_reason=finish_reason,
+        )
+
     def _map_http_error(self, response: httpx.Response, body: str, provider: ProviderConfig) -> ModelError:
         raw_code = ""
         message = ""
@@ -424,6 +726,148 @@ class OpenAICompatibleGateway(BaseGateway):
             cache_miss_tokens=cache_miss,
             raw=raw,
         )
+
+
+def _is_deepseek(provider: ProviderConfig) -> bool:
+    return "deepseek" in provider.id.lower() or "deepseek" in provider.base_url.lower()
+
+
+def _deepseek_thinking_model(provider: ProviderConfig, model: ModelConfig) -> bool:
+    return _is_deepseek(provider) and any(hint in model.id.lower() for hint in DEEPSEEK_THINKING_HINTS)
+
+
+async def _iter_sse_json(response: httpx.Response) -> AsyncIterator[dict[str, Any]]:
+    async for line in response.aiter_lines():
+        if not line or line.startswith(":") or line.startswith("event:") or not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if not data or data == "[DONE]":
+            continue
+        try:
+            payload = json.loads(data)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            yield payload
+
+
+def _to_anthropic_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+    system_parts: list[str] = []
+    converted: list[dict[str, Any]] = []
+    for message in messages:
+        role = message.get("role")
+        if role == "system":
+            system_parts.append(str(message.get("content") or ""))
+            continue
+        if role == "tool":
+            converted.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": str(message.get("tool_call_id") or ""),
+                            "content": str(message.get("content") or ""),
+                        }
+                    ],
+                }
+            )
+            continue
+        if role == "assistant":
+            blocks: list[dict[str, Any]] = []
+            content = message.get("content")
+            if content:
+                blocks.append({"type": "text", "text": str(content)})
+            for call in message.get("tool_calls") or []:
+                function = call.get("function") or {}
+                try:
+                    args = json.loads(function.get("arguments") or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+                blocks.append(
+                    {
+                        "type": "tool_use",
+                        "id": str(call.get("id") or ""),
+                        "name": str(function.get("name") or ""),
+                        "input": args,
+                    }
+                )
+            converted.append({"role": "assistant", "content": blocks or [{"type": "text", "text": ""}]})
+            continue
+        content = message.get("content")
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if item.get("type") == "text":
+                    parts.append({"type": "text", "text": str(item.get("text") or "")})
+                elif item.get("type") == "image_url":
+                    url = str((item.get("image_url") or {}).get("url") or "")
+                    if url.startswith("data:") and ";base64," in url:
+                        header, data = url.split(";base64,", 1)
+                        parts.append(
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": header[5:] or "image/png",
+                                    "data": data,
+                                },
+                            }
+                        )
+            converted.append({"role": "user", "content": parts})
+        else:
+            converted.append({"role": "user", "content": str(content or "")})
+    return "\n\n".join(system_parts), converted
+
+
+def _to_responses_input(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+    instructions: list[str] = []
+    items: list[dict[str, Any]] = []
+    for message in messages:
+        role = message.get("role")
+        if role == "system":
+            instructions.append(str(message.get("content") or ""))
+            continue
+        if role == "tool":
+            items.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": str(message.get("tool_call_id") or ""),
+                    "output": str(message.get("content") or ""),
+                }
+            )
+            continue
+        if role == "assistant":
+            for call in message.get("tool_calls") or []:
+                function = call.get("function") or {}
+                items.append(
+                    {
+                        "type": "function_call",
+                        "call_id": str(call.get("id") or ""),
+                        "name": str(function.get("name") or ""),
+                        "arguments": str(function.get("arguments") or "{}"),
+                    }
+                )
+            if message.get("content"):
+                items.append({"role": "assistant", "content": str(message["content"])})
+            continue
+        content = message.get("content")
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if item.get("type") == "text":
+                    parts.append({"type": "input_text", "text": str(item.get("text") or "")})
+                elif item.get("type") == "image_url":
+                    parts.append(
+                        {
+                            "type": "input_image",
+                            "image_url": (item.get("image_url") or {}).get("url"),
+                        }
+                    )
+            items.append({"role": "user", "content": parts})
+        else:
+            items.append({"role": "user", "content": str(content or "")})
+    return "\n\n".join(instructions), items
 
 
 class MockGateway(BaseGateway):
@@ -644,7 +1088,7 @@ class UnavailableGateway(BaseGateway):
         yield ModelChunk(kind="completed")
 
 
-def create_gateway(config: AppConfig) -> BaseGateway:
+def create_gateway(config: AppConfig, *, header_resolver=None) -> BaseGateway:
     if not config.providers:
         return UnavailableGateway(config)
     enabled = [provider for provider in config.providers if provider.enabled]
@@ -655,4 +1099,4 @@ def create_gateway(config: AppConfig) -> BaseGateway:
         return UnavailableGateway(config)
     if all(provider.protocol == "mock" for provider in enabled):
         return MockGateway(config)
-    return OpenAICompatibleGateway(config)
+    return OpenAICompatibleGateway(config, header_resolver=header_resolver)

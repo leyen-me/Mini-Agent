@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight, Clock3, Wrench } from 'lucide-react';
 import { useState } from 'react';
 import type { ToolCall } from '../api/types';
 import { CopyButton } from './CopyButton';
+import { DiffView } from './DiffView';
 import { RiskBadge, ToolStatusBadge } from './StatusBadge';
 import { useUi } from '../state/UiContext';
 
@@ -31,6 +32,8 @@ export function ToolCallCard({ call }: { call: ToolCall }) {
   const [open, setOpen] = useState(false);
   const elapsed = duration(call);
   const Chevron = open ? ChevronDown : ChevronRight;
+  const data = (call.output?.data ?? null) as Record<string, unknown> | null;
+  const diff = typeof data?.diff === 'string' ? data.diff : '';
   return (
     <div className={`tool-card tool-card-${call.status}`}>
       <button
@@ -57,7 +60,10 @@ export function ToolCallCard({ call }: { call: ToolCall }) {
             <section>
               <header>
                 <h4>{t('chat.toolInput')}</h4>
-                <CopyButton text={JSON.stringify(call.input, null, 2)} label={t('chat.toolCopyInput')} />
+                <CopyButton
+                  text={JSON.stringify(call.input, null, 2)}
+                  label={t('chat.toolCopyInput')}
+                />
               </header>
               <pre>{JSON.stringify(call.input, null, 2)}</pre>
             </section>
@@ -69,15 +75,30 @@ export function ToolCallCard({ call }: { call: ToolCall }) {
                   label={t('chat.toolCopyOutput')}
                 />
               </header>
-              <pre>{call.output ? JSON.stringify(call.output, null, 2) : t('chat.toolNoOutput')}</pre>
+              <pre>
+                {call.output
+                  ? JSON.stringify(call.output, null, 2)
+                  : t('chat.toolNoOutput')}
+              </pre>
             </section>
           </div>
+          {diff && (
+            <section className="tool-diff">
+              <header>
+                <h4>{t('chat.diff')}</h4>
+                <CopyButton text={diff} label={t('chat.diff')} />
+              </header>
+              <DiffView diff={diff} />
+            </section>
+          )}
           {call.output?.truncated && (
             <p className="tool-truncated">
               {t('chat.toolOutput')} {call.output.artifacts.join(', ')}
             </p>
           )}
-          {call.errorCode && <p className="tool-error-code">{call.errorCode}</p>}
+          {call.errorCode && (
+            <p className="tool-error-code">{call.errorCode}</p>
+          )}
         </div>
       )}
     </div>

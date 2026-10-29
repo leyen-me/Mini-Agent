@@ -20,6 +20,7 @@ WORKDIR /app/backend
 COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-dev
 COPY backend/ ./
+COPY skills/ /app/skills/
 COPY --from=web /app/frontend/dist /app/frontend/dist
 RUN useradd --create-home --uid 10001 agent \
     && mkdir -p /data /app/frontend/dist \

@@ -1,5 +1,14 @@
-import { AlertTriangle, CheckCircle2, Info, Plus, Settings, X } from 'lucide-react';
 import {
+  AlertTriangle,
+  CheckCircle2,
+  Info,
+  Plus,
+  Settings,
+  X,
+} from 'lucide-react';
+import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useRef,
@@ -10,13 +19,22 @@ import type {
   AgentInfo,
   BootstrapData,
   ChatMessage,
+  CommandInfo,
   Session,
   Snapshot,
   StreamEvent,
   StreamStatus,
 } from './api/types';
 import { ChatView } from './components/ChatView';
+import type { AdminTab } from './components/AdminDialog';
 import { CommandPalette } from './components/CommandPalette';
+import { CommandPreview } from './components/CommandPreview';
+
+const AdminDialog = lazy(() =>
+  import('./components/AdminDialog').then((module) => ({
+    default: module.AdminDialog,
+  })),
+);
 import { Composer } from './components/Composer';
 import { GoalDialog } from './components/GoalDialog';
 import { Modal } from './components/Modal';
@@ -36,7 +54,8 @@ interface Toast {
   kind: 'info' | 'error' | 'success';
 }
 
-type SettingsTab = 'general' | 'models' | 'agents' | 'permissions' | 'data' | 'about';
+type SettingsTab =
+  'general' | 'models' | 'agents' | 'permissions' | 'data' | 'about';
 
 function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(() =>
@@ -100,21 +119,42 @@ export function App() {
   const [streamStatus, setStreamStatus] = useState<StreamStatus>('offline');
   const [retryNotice, setRetryNotice] = useState<string | null>(null);
   const [errorDismissed, setErrorDismissed] = useState(false);
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => loadBoolean('mini-agent-sidebar-collapsed', false));
-  const [sidebarWidth, setSidebarWidth] = useState(() => loadNumber('mini-agent-sidebar-width', 284));
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(
+    null,
+  );
+  const [workspaces, setWorkspaces] = useState<BootstrapData['workspaces']>([]);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
+    loadBoolean('mini-agent-sidebar-collapsed', false),
+  );
+  const [sidebarWidth, setSidebarWidth] = useState(() =>
+    loadNumber('mini-agent-sidebar-width', 284),
+  );
   const [mobileOpen, setMobileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
+  const [adminOpen, setAdminOpen] = useState(false);
+  const [adminTab, setAdminTab] = useState<AdminTab>('providers');
+  const [commands, setCommands] = useState<CommandInfo[]>([]);
+  const [previewCommand, setPreviewCommand] = useState<CommandInfo | null>(
+    null,
+  );
+  const [previewCommandArgs, setPreviewCommandArgs] = useState('');
   const [goalOpen, setGoalOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [info, setInfo] = useState<{ title: string; body: string } | null>(null);
-  const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
+  const [info, setInfo] = useState<{ title: string; body: string } | null>(
+    null,
+  );
+  const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(
+    null,
+  );
   const [editDraft, setEditDraft] = useState('');
   const [editBusy, setEditBusy] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [pendingReference, setPendingReference] = useState<{ path: string; nonce: number } | null>(null);
+  const [pendingReference, setPendingReference] = useState<{
+    path: string;
+    nonce: number;
+  } | null>(null);
   const toastId = useRef(0);
   const booted = useRef(false);
   const selectedIdRef = useRef<string | null>(null);
@@ -131,23 +171,34 @@ export function App() {
   }, [snapshot]);
   useEffect(() => {
     persistSessionId(selectedId);
-    if (snapshot?.session.title) document.title = `${snapshot.session.title} · Mini Agent`;
+    if (snapshot?.session.title)
+      document.title = `${snapshot.session.title} · Mini Agent`;
   }, [selectedId, snapshot?.session.title]);
 
-  const pushToast = useCallback((message: string, kind: Toast['kind'] = 'info') => {
-    const id = (toastId.current += 1);
-    setToasts((current) => [...current, { id, message, kind }]);
-    window.setTimeout(() => setToasts((current) => current.filter((item) => item.id !== id)), 4800);
-  }, []);
+  const pushToast = useCallback(
+    (message: string, kind: Toast['kind'] = 'info') => {
+      const id = (toastId.current += 1);
+      setToasts((current) => [...current, { id, message, kind }]);
+      window.setTimeout(
+        () => setToasts((current) => current.filter((item) => item.id !== id)),
+        4800,
+      );
+    },
+    [],
+  );
 
   const refreshSessions = useCallback(async () => {
     try {
-      const list = await api.sessions({ search: searchRef.current || undefined, limit: 200 });
+      const list = await api.sessions({
+        workspaceId: activeWorkspaceId ?? undefined,
+        search: searchRef.current || undefined,
+        limit: 200,
+      });
       setSessions(list);
     } catch {
       // Keep the previous list; the SSE/snapshot state still drives the UI.
     }
-  }, []);
+  }, [activeWorkspaceId]);
 
   const refreshSnapshot = useCallback(async (): Promise<number> => {
     const id = selectedIdRef.current;
@@ -173,28 +224,41 @@ export function App() {
     }, 80);
   }, [refreshSnapshot, refreshSessions]);
 
-  const notifyDesktop = useCallback((title: string, body: string) => {
-    const config = boot?.config;
-    if (!config?.general.notifications || typeof Notification === 'undefined') return;
-    if (Notification.permission !== 'granted' || !document.hidden) return;
-    try {
-      new Notification(title, { body, icon: '/favicon.svg' });
-    } catch {
-      // Notification construction can fail on some embedded browsers.
-    }
-  }, [boot?.config]);
+  const notifyDesktop = useCallback(
+    (title: string, body: string) => {
+      const config = boot?.config;
+      if (!config?.general.notifications || typeof Notification === 'undefined')
+        return;
+      if (Notification.permission !== 'granted' || !document.hidden) return;
+      try {
+        new Notification(title, { body, icon: '/favicon.svg' });
+      } catch {
+        // Notification construction can fail on some embedded browsers.
+      }
+    },
+    [boot?.config],
+  );
 
   const handleEvent = useCallback(
     (event: StreamEvent) => {
-      if (event.sessionId && selectedIdRef.current && event.sessionId !== selectedIdRef.current) {
-        if (event.type === 'session.updated' || event.type === 'session.status') {
+      if (
+        event.sessionId &&
+        selectedIdRef.current &&
+        event.sessionId !== selectedIdRef.current
+      ) {
+        if (
+          event.type === 'session.updated' ||
+          event.type === 'session.status'
+        ) {
           setSessions((current) =>
             current.map((session) =>
               session.id === event.sessionId
                 ? {
                     ...session,
                     ...(event.session as Partial<Session> | undefined),
-                    ...(event.status ? { status: event.status as Session['status'] } : {}),
+                    ...(event.status
+                      ? { status: event.status as Session['status'] }
+                      : {}),
                   }
                 : session,
             ),
@@ -203,7 +267,9 @@ export function App() {
         return;
       }
       setSnapshot((current) =>
-        current && current.session.id === event.sessionId ? applyEvent(current, event) : current,
+        current && current.session.id === event.sessionId
+          ? applyEvent(current, event)
+          : current,
       );
       if (event.type === 'session.status' || event.type === 'session.updated') {
         setSessions((current) =>
@@ -212,34 +278,54 @@ export function App() {
               ? {
                   ...session,
                   ...(event.session as Partial<Session> | undefined),
-                  ...(event.status ? { status: event.status as Session['status'] } : {}),
+                  ...(event.status
+                    ? { status: event.status as Session['status'] }
+                    : {}),
                 }
               : session,
           ),
         );
         if (event.status === 'error') setErrorDismissed(false);
         if (event.status === 'waiting_user') {
-          notifyDesktop(t('chat.interaction.ask'), snapshotRef.current?.session.title ?? t('app.name'));
+          notifyDesktop(
+            t('chat.interaction.ask'),
+            snapshotRef.current?.session.title ?? t('app.name'),
+          );
         }
       }
       if (event.type === 'turn.completed') {
-        notifyDesktop(t('turn.completed'), snapshotRef.current?.session.title ?? t('app.name'));
+        notifyDesktop(
+          t('turn.completed'),
+          snapshotRef.current?.session.title ?? t('app.name'),
+        );
         scheduleRefresh();
       }
-      if (['turn.failed', 'turn.paused', 'turn.cancelled', 'compaction.created', 'session.recovered'].includes(event.type)) {
+      if (
+        [
+          'turn.failed',
+          'turn.paused',
+          'turn.cancelled',
+          'compaction.created',
+          'session.recovered',
+        ].includes(event.type)
+      ) {
         scheduleRefresh();
       }
       if (event.type === 'interaction.required') {
         const interaction = event.interaction as { type?: string } | undefined;
         notifyDesktop(
-          interaction?.type === 'permission' ? t('chat.interaction.permission') : t('chat.interaction.ask'),
+          interaction?.type === 'permission'
+            ? t('chat.interaction.permission')
+            : t('chat.interaction.ask'),
           snapshotRef.current?.session.title ?? t('app.name'),
         );
       }
       if (event.type === 'model.retry') {
-        setRetryNotice(
-          t('chat.retryHint', { n: Number(event.attempt ?? 1) }),
-        );
+        setRetryNotice(t('chat.retryHint', { n: Number(event.attempt ?? 1) }));
+      }
+      if (event.type === 'model.fallback') {
+        setRetryNotice(String(event.message ?? '已切换备用模型'));
+        pushToast(String(event.message ?? '已切换备用模型'), 'info');
       }
       if (event.type === 'error') {
         const message = String(event.message ?? t('app.error'));
@@ -256,7 +342,8 @@ export function App() {
   useSessionStream({
     sessionId: selectedId,
     enabled: Boolean(selectedId && snapshot?.session.id === selectedId),
-    initialLastEventId: snapshot?.session.id === selectedId ? snapshot.lastEventId : 0,
+    initialLastEventId:
+      snapshot?.session.id === selectedId ? snapshot.lastEventId : 0,
     onEvent: handleEvent,
     refreshSnapshot,
     onStatus: setStreamStatus,
@@ -269,8 +356,11 @@ export function App() {
     try {
       const data = await api.bootstrap();
       setBoot(data);
+      setWorkspaces(data.workspaces);
       setSessions(data.sessions);
-      setActiveWorkspaceId((current) => current ?? data.workspaces[0]?.id ?? null);
+      setActiveWorkspaceId(
+        (current) => current ?? data.workspaces[0]?.id ?? null,
+      );
       const storedLanguage = localStorage.getItem('mini-agent-language');
       if (!storedLanguage && data.config.general.language !== language) {
         setLanguage(data.config.general.language as Language);
@@ -280,9 +370,12 @@ export function App() {
         setTheme(data.config.general.theme as ThemeSetting);
       }
       const stored = loadSessionId();
-      const candidate = data.sessions.find((session) => session.id === stored) ?? data.sessions[0];
+      const candidate =
+        data.sessions.find((session) => session.id === stored) ??
+        data.sessions[0];
       if (candidate) {
         setSelectedId(candidate.id);
+        setActiveWorkspaceId(candidate.workspaceId);
       } else if (data.config.model_configured && data.workspaces.length) {
         const created = await api.createSession({
           workspaceId: data.workspaces[0].id,
@@ -306,6 +399,14 @@ export function App() {
     booted.current = true;
     void bootstrap();
   }, [bootstrap]);
+
+  useEffect(() => {
+    if (!boot) return;
+    api.commands
+      .list()
+      .then(setCommands)
+      .catch(() => setCommands([]));
+  }, [boot]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -341,17 +442,42 @@ export function App() {
   }, [isMobile]);
 
   useEffect(() => {
-    localStorage.setItem('mini-agent-sidebar-collapsed', String(sidebarCollapsed));
+    localStorage.setItem(
+      'mini-agent-sidebar-collapsed',
+      String(sidebarCollapsed),
+    );
   }, [sidebarCollapsed]);
   useEffect(() => {
     localStorage.setItem('mini-agent-sidebar-width', String(sidebarWidth));
   }, [sidebarWidth]);
 
-  const selectSession = useCallback((id: string) => {
-    setSelectedId(id);
-    setMobileOpen(false);
-    setPaletteOpen(false);
-  }, []);
+  const selectSession = useCallback(
+    (id: string) => {
+      const target = sessions.find((session) => session.id === id);
+      if (target) setActiveWorkspaceId(target.workspaceId);
+      setSelectedId(id);
+      setMobileOpen(false);
+      setPaletteOpen(false);
+    },
+    [sessions],
+  );
+
+  const changeWorkspace = useCallback(
+    async (workspaceId: string) => {
+      setActiveWorkspaceId(workspaceId);
+      setMobileOpen(false);
+      try {
+        const list = await api.sessions({ workspaceId, limit: 200 });
+        setSessions(list);
+        const next = list[0] ?? null;
+        setSelectedId(next?.id ?? null);
+        if (!next) setSnapshot(null);
+      } catch (error) {
+        pushToast(errorMessage(error), 'error');
+      }
+    },
+    [pushToast],
+  );
 
   const createSession = useCallback(async () => {
     if (!boot) return;
@@ -376,45 +502,74 @@ export function App() {
     }
   }, [boot, activeWorkspaceId, pushToast, t]);
 
-  const handleSearch = useCallback(async (query: string) => {
-    searchRef.current = query;
-    try {
-      const list = await api.sessions({ search: query || undefined, limit: 200 });
-      setSessions(list);
-    } catch {
-      // Keep current list on transient failure.
-    }
-  }, []);
+  const handleSearch = useCallback(
+    async (query: string) => {
+      searchRef.current = query;
+      try {
+        const list = await api.sessions({
+          workspaceId: activeWorkspaceId ?? undefined,
+          search: query || undefined,
+          limit: 200,
+        });
+        setSessions(list);
+      } catch {
+        // Keep current list on transient failure.
+      }
+    },
+    [activeWorkspaceId],
+  );
 
-  const currentSession = snapshot?.session ?? sessions.find((session) => session.id === selectedId) ?? null;
+  const currentSession =
+    snapshot?.session ??
+    sessions.find((session) => session.id === selectedId) ??
+    null;
+  const visibleSessions = activeWorkspaceId
+    ? sessions.filter((session) => session.workspaceId === activeWorkspaceId)
+    : sessions;
   const currentWorkspace =
     snapshot?.workspace ??
-    boot?.workspaces.find((workspace) => workspace.id === currentSession?.workspaceId) ??
+    boot?.workspaces.find(
+      (workspace) => workspace.id === currentSession?.workspaceId,
+    ) ??
     null;
   const currentAgent: AgentInfo | null =
-    snapshot?.agent ?? boot?.agents.find((agent) => agent.id === currentSession?.agentId) ?? null;
+    snapshot?.agent ??
+    boot?.agents.find((agent) => agent.id === currentSession?.agentId) ??
+    null;
   const busy = currentSession
     ? ['running', 'waiting_user', 'compacting'].includes(currentSession.status)
     : false;
 
   const sendMessage = useCallback(
-    async (content: string, mode: 'auto' | 'steer' | 'queue' = 'auto') => {
+    async (
+      content: string,
+      mode: 'auto' | 'steer' | 'queue' = 'auto',
+      attachmentIds?: string[],
+    ) => {
       if (!currentSession) throw new Error(t('app.noSessionsHint'));
       try {
         const result = await api.sendMessage(currentSession.id, {
           content,
           mode,
+          attachmentIds,
           clientMessageId: newClientId(),
         });
         setSessions((current) =>
           current.map((session) =>
             session.id === currentSession.id
-              ? { ...session, status: 'running', updatedAt: new Date().toISOString() }
+              ? {
+                  ...session,
+                  status: 'running',
+                  updatedAt: new Date().toISOString(),
+                }
               : session,
           ),
         );
         if (result.queued) {
-          pushToast(mode === 'steer' ? t('toast.steered') : t('toast.queued'), 'success');
+          pushToast(
+            mode === 'steer' ? t('toast.steered') : t('toast.queued'),
+            'success',
+          );
           scheduleRefresh();
         } else {
           window.setTimeout(() => void refreshSnapshot(), 60);
@@ -425,6 +580,113 @@ export function App() {
       }
     },
     [currentSession, pushToast, refreshSnapshot, scheduleRefresh, t],
+  );
+
+  const switchAgent = useCallback(
+    async (agentId: string) => {
+      if (!currentSession) return;
+      try {
+        const updated = await api.updateSession(currentSession.id, { agentId });
+        setSnapshot((current) =>
+          current ? { ...current, session: updated.session } : current,
+        );
+        pushToast(t('settings.saved'), 'success');
+      } catch (error) {
+        pushToast(errorMessage(error), 'error');
+      }
+    },
+    [currentSession, pushToast, t],
+  );
+
+  const deleteSession = useCallback(
+    async (session: Session) => {
+      if (
+        !window.confirm(
+          t('app.deleteConfirm', { title: session.title || session.id }),
+        )
+      )
+        return;
+      try {
+        await api.deleteSession(session.id);
+        setSessions((current) =>
+          current.filter((item) => item.id !== session.id),
+        );
+        if (selectedId === session.id) {
+          const next = sessions.find((item) => item.id !== session.id) ?? null;
+          setSelectedId(next?.id ?? null);
+          if (!next) setSnapshot(null);
+        }
+        pushToast(t('app.deleted'), 'success');
+      } catch (error) {
+        pushToast(errorMessage(error), 'error');
+      }
+    },
+    [pushToast, selectedId, sessions, t],
+  );
+
+  const undoFiles = useCallback(
+    async (turnId: string) => {
+      if (!currentSession) return;
+      try {
+        const result = await api.checkpoints.undo(currentSession.id, turnId);
+        pushToast(
+          result.restored.length
+            ? t('chat.filesUndone', { n: result.restored.length })
+            : t('chat.noFileChanges'),
+          result.restored.length ? 'success' : 'info',
+        );
+        scheduleRefresh();
+      } catch (error) {
+        pushToast(errorMessage(error), 'error');
+      }
+    },
+    [currentSession, pushToast, scheduleRefresh, t],
+  );
+
+  const redoFiles = useCallback(
+    async (turnId: string) => {
+      if (!currentSession) return;
+      try {
+        const result = await api.checkpoints.redo(currentSession.id, turnId);
+        pushToast(
+          result.restored.length
+            ? t('chat.filesRedone', { n: result.restored.length })
+            : t('chat.noFileChanges'),
+          result.restored.length ? 'success' : 'info',
+        );
+        scheduleRefresh();
+      } catch (error) {
+        pushToast(errorMessage(error), 'error');
+      }
+    },
+    [currentSession, pushToast, scheduleRefresh, t],
+  );
+
+  const openCommandPreview = useCallback(
+    (command: CommandInfo, initialArgs = '') => {
+      setPreviewCommandArgs(initialArgs);
+      setPreviewCommand(command);
+    },
+    [],
+  );
+
+  const runCustomCommand = useCallback(
+    async (command: CommandInfo, prompt: string) => {
+      if (!currentSession) return;
+      if (command.model || command.agentId || command.reasoningLevel) {
+        const updated = await api.updateSession(currentSession.id, {
+          model: command.model ?? undefined,
+          agentId: command.agentId ?? undefined,
+          reasoningLevel: command.reasoningLevel ?? undefined,
+        });
+        setSnapshot((current) =>
+          current ? { ...current, session: updated.session } : current,
+        );
+      }
+      await sendMessage(prompt, 'auto');
+      pushToast(t('chat.commandStarted'), 'success');
+    },
+    [currentSession, pushToast, sendMessage, t],
   );
 
   const stop = useCallback(async () => {
@@ -469,7 +731,9 @@ export function App() {
       try {
         const result = await api.updateSession(currentSession.id, body);
         setSessions((current) =>
-          current.map((session) => (session.id === result.session.id ? result.session : session)),
+          current.map((session) =>
+            session.id === result.session.id ? result.session : session,
+          ),
         );
         setSnapshot((current) =>
           current && current.session.id === result.session.id
@@ -512,7 +776,11 @@ export function App() {
     async (session: Session, pinned: boolean) => {
       try {
         const result = await api.updateSession(session.id, { pinned });
-        setSessions((current) => current.map((item) => (item.id === result.session.id ? result.session : item)));
+        setSessions((current) =>
+          current.map((item) =>
+            item.id === result.session.id ? result.session : item,
+          ),
+        );
         pushToast(t('toast.pinned'), 'success');
       } catch (error) {
         pushToast(errorMessage(error), 'error');
@@ -525,7 +793,9 @@ export function App() {
     async (session: Session) => {
       try {
         await api.updateSession(session.id, { archived: true });
-        setSessions((current) => current.filter((item) => item.id !== session.id));
+        setSessions((current) =>
+          current.filter((item) => item.id !== session.id),
+        );
         pushToast(t('toast.archived'), 'success');
         if (session.id === selectedIdRef.current) {
           const next = sessions.find((item) => item.id !== session.id) ?? null;
@@ -563,7 +833,11 @@ export function App() {
     if (!currentSession || !editingMessage) return;
     setEditBusy(true);
     try {
-      const result = await api.editMessage(currentSession.id, editingMessage.id, editDraft.trim());
+      const result = await api.editMessage(
+        currentSession.id,
+        editingMessage.id,
+        editDraft.trim(),
+      );
       setSessions((current) => [result.session, ...current]);
       setSelectedId(result.session.id);
       setEditingMessage(null);
@@ -618,21 +892,27 @@ export function App() {
     async (body: {
       objective: string;
       criteria: string;
-      tasks: Array<{ title: string; status: 'pending' | 'in_progress' | 'completed' | 'blocked' }>;
+      tasks: Array<{
+        title: string;
+        status: 'pending' | 'in_progress' | 'completed' | 'blocked';
+      }>;
     }) => {
       if (!currentSession) return;
       const result = await api.goals.update(currentSession.id, body);
-      setSnapshot((current) => (current ? { ...current, goal: result.goal } : current));
+      setSnapshot((current) =>
+        current ? { ...current, goal: result.goal } : current,
+      );
       pushToast(t('toast.goalSaved'), 'success');
     },
     [currentSession, pushToast, t],
   );
 
-
   const saveDefaults = useCallback(
     async (defaults: Record<string, unknown>) => {
       const updated = await api.patchConfig({ defaults });
-      setBoot((current) => (current ? { ...current, config: updated } : current));
+      setBoot((current) =>
+        current ? { ...current, config: updated } : current,
+      );
     },
     [],
   );
@@ -643,7 +923,15 @@ export function App() {
       if (boot) {
         void api.patchConfig({ general: { theme } }).catch(() => undefined);
         setBoot((current) =>
-          current ? { ...current, config: { ...current.config, general: { ...current.config.general, theme } } } : current,
+          current
+            ? {
+                ...current,
+                config: {
+                  ...current.config,
+                  general: { ...current.config.general, theme },
+                },
+              }
+            : current,
         );
       }
     },
@@ -654,9 +942,19 @@ export function App() {
     (next: Language) => {
       setLanguage(next);
       if (boot) {
-        void api.patchConfig({ general: { language: next } }).catch(() => undefined);
+        void api
+          .patchConfig({ general: { language: next } })
+          .catch(() => undefined);
         setBoot((current) =>
-          current ? { ...current, config: { ...current.config, general: { ...current.config.general, language: next } } } : current,
+          current
+            ? {
+                ...current,
+                config: {
+                  ...current.config,
+                  general: { ...current.config.general, language: next },
+                },
+              }
+            : current,
         );
       }
     },
@@ -667,15 +965,28 @@ export function App() {
     (enabled: boolean) => {
       if (!boot) return;
       setBoot((current) =>
-        current ? { ...current, config: { ...current.config, general: { ...current.config.general, notifications: enabled } } } : current,
+        current
+          ? {
+              ...current,
+              config: {
+                ...current.config,
+                general: { ...current.config.general, notifications: enabled },
+              },
+            }
+          : current,
       );
-      void api.patchConfig({ general: { notifications: enabled } }).catch(() => undefined);
+      void api
+        .patchConfig({ general: { notifications: enabled } })
+        .catch(() => undefined);
     },
     [boot],
   );
 
   const updateQueue = useCallback(
-    async (id: string, body: { content?: string; mode?: 'steer' | 'queue' }) => {
+    async (
+      id: string,
+      body: { content?: string; mode?: 'steer' | 'queue' },
+    ) => {
       if (!currentSession) return;
       await api.updateQueue(currentSession.id, id, body);
       scheduleRefresh();
@@ -724,7 +1035,11 @@ export function App() {
             <AlertTriangle size={28} aria-hidden="true" />
             <h1>{t('app.error')}</h1>
             <p className="muted">{bootError}</p>
-            <button type="button" className="primary-button" onClick={() => void bootstrap()}>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => void bootstrap()}
+            >
               {t('app.retry')}
             </button>
           </div>
@@ -744,10 +1059,19 @@ export function App() {
     return (
       <div className="setup-screen">
         <div className="setup-card">
-          <div className="brand-mark large" aria-hidden="true">M</div>
+          <div className="brand-mark large" aria-hidden="true">
+            M
+          </div>
           <h1>{t('chat.noModel')}</h1>
           <p className="muted">{t('chat.noModelHint')}</p>
-          <button type="button" className="primary-button" onClick={() => { setSettingsTab('models'); setSettingsOpen(true); }}>
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => {
+              setSettingsTab('models');
+              setSettingsOpen(true);
+            }}
+          >
             <Settings size={15} aria-hidden="true" /> {t('chat.noModelCta')}
           </button>
           <p className="muted small">{t('settings.about.guide')}</p>
@@ -766,8 +1090,19 @@ export function App() {
           onSaveDefaults={saveDefaults}
           onExport={() => undefined}
           onToast={pushToast}
+          onOpenAdmin={() => {
+            setAdminTab('providers');
+            setAdminOpen(true);
+          }}
+          onSwitchAgent={switchAgent}
+          version={boot?.version}
         />
-        <Toasts toasts={toasts} onDismiss={(id) => setToasts((current) => current.filter((item) => item.id !== id))} />
+        <Toasts
+          toasts={toasts}
+          onDismiss={(id) =>
+            setToasts((current) => current.filter((item) => item.id !== id))
+          }
+        />
       </div>
     );
   }
@@ -776,14 +1111,27 @@ export function App() {
     return (
       <div className="setup-screen">
         <div className="setup-card">
-          <div className="brand-mark large" aria-hidden="true">M</div>
+          <div className="brand-mark large" aria-hidden="true">
+            M
+          </div>
           <h1>{t('app.noSessions')}</h1>
-          <p className="muted">{loading ? t('app.loading') : t('app.noSessionsHint')}</p>
-          <button type="button" className="primary-button" onClick={() => void createSession()}>
+          <p className="muted">
+            {loading ? t('app.loading') : t('app.noSessionsHint')}
+          </p>
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => void createSession()}
+          >
             <Plus size={15} aria-hidden="true" /> {t('app.newSession')}
           </button>
         </div>
-        <Toasts toasts={toasts} onDismiss={(id) => setToasts((current) => current.filter((item) => item.id !== id))} />
+        <Toasts
+          toasts={toasts}
+          onDismiss={(id) =>
+            setToasts((current) => current.filter((item) => item.id !== id))
+          }
+        />
       </div>
     );
   }
@@ -795,6 +1143,8 @@ export function App() {
       queue={snapshot?.queue ?? []}
       busy={busy}
       onSend={sendMessage}
+      commands={commands}
+      onPreviewCommand={openCommandPreview}
       onStop={() => void stop()}
       onModeChange={changeMode}
       onModelChange={changeModel}
@@ -802,7 +1152,10 @@ export function App() {
       onExport={() => void exportSession('json')}
       onNew={() => void createSession()}
       onOpenGoal={() => setGoalOpen(true)}
-      onOpenSettings={() => { setSettingsTab('models'); setSettingsOpen(true); }}
+      onOpenSettings={() => {
+        setSettingsTab('models');
+        setSettingsOpen(true);
+      }}
       onShowHelp={() => setHelpOpen(true)}
       onToast={pushToast}
       onUpdateQueue={updateQueue}
@@ -815,30 +1168,51 @@ export function App() {
   );
 
   return (
-    <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
+    <div
+      className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}
+    >
       <div className="sidebar-frame" aria-hidden={isMobile && !mobileOpen}>
         <Sidebar
-          sessions={sessions}
+          sessions={visibleSessions}
           selectedId={selectedId}
-          workspaces={boot?.workspaces ?? []}
+          workspaces={workspaces}
           activeWorkspaceId={activeWorkspaceId}
           collapsed={!isMobile && sidebarCollapsed}
           width={sidebarWidth}
           mobile={isMobile}
           onSelect={selectSession}
           onNewSession={() => void createSession()}
-          onOpenSettings={() => { setSettingsTab('general'); setSettingsOpen(true); }}
-          onOpenSkills={() => setInfo({ title: t('app.skills'), body: t('info.skills') })}
-          onOpenMcp={() => setInfo({ title: t('app.mcp'), body: t('info.mcp') })}
-          onOpenAgents={() => { setSettingsTab('agents'); setSettingsOpen(true); }}
+          onOpenSettings={() => {
+            setSettingsTab('general');
+            setSettingsOpen(true);
+          }}
+          onOpenSkills={() => {
+            setAdminTab('skills');
+            setAdminOpen(true);
+          }}
+          onOpenMcp={() => {
+            setAdminTab('mcp');
+            setAdminOpen(true);
+          }}
+          onOpenAgents={() => {
+            setAdminTab('agents');
+            setAdminOpen(true);
+          }}
+          onOpenAdmin={() => {
+            setAdminTab('providers');
+            setAdminOpen(true);
+          }}
+          onDeleteSession={(session) => void deleteSession(session)}
           onOpenPalette={() => setPaletteOpen(true)}
           onSearch={handleSearch}
-          onWorkspaceChange={setActiveWorkspaceId}
+          onWorkspaceChange={(id) => void changeWorkspace(id)}
           onPin={(session, pinned) => void pinSession(session, pinned)}
           onArchive={(session) => void archiveSession(session)}
           onToggleCollapse={() => setSidebarCollapsed((value) => !value)}
           onWidthChange={setSidebarWidth}
-          onReferenceFile={(path) => setPendingReference({ path, nonce: Date.now() })}
+          onReferenceFile={(path) =>
+            setPendingReference({ path, nonce: Date.now() })
+          }
         />
       </div>
       {isMobile && mobileOpen && (
@@ -859,22 +1233,45 @@ export function App() {
         fatalError={fatalError}
         streamStatus={streamStatus}
         retryNotice={retryNotice}
-        interactions={(snapshot?.interactions ?? []).filter((interaction) => interaction.status === 'pending')}
+        interactions={(snapshot?.interactions ?? []).filter(
+          (interaction) => interaction.status === 'pending',
+        )}
         composer={composer}
         mobile={isMobile}
         sidebarCollapsed={sidebarCollapsed}
-        onToggleSidebar={() => (isMobile ? setMobileOpen((value) => !value) : setSidebarCollapsed((value) => !value))}
-        onRename={async (title) => { await renameSession(title); }}
+        onCycleTheme={() =>
+          changeTheme(
+            themeSetting === 'dark'
+              ? 'light'
+              : themeSetting === 'light'
+                ? 'system'
+                : 'dark',
+          )
+        }
+        onToggleSidebar={() =>
+          isMobile
+            ? setMobileOpen((value) => !value)
+            : setSidebarCollapsed((value) => !value)
+        }
+        onRename={async (title) => {
+          await renameSession(title);
+        }}
         onAnswer={answerInteraction}
         onResume={() => void resume()}
         onRetry={() => void bootstrap()}
-        onOpenSettings={() => { setSettingsTab('general'); setSettingsOpen(true); }}
+        onOpenSettings={() => {
+          setSettingsTab('general');
+          setSettingsOpen(true);
+        }}
         onOpenGoal={() => setGoalOpen(true)}
         onOpenShare={() => void createShare()}
         onExport={(format) => void exportSession(format)}
         onCompact={() => void compact()}
         onEditMessage={openEdit}
         onFork={(messageId) => void forkSession(messageId)}
+        onUndo={(turnId) => void undoFiles(turnId)}
+        onRedo={(turnId) => void redoFiles(turnId)}
+        onSelectSession={selectSession}
         onSuggestion={(prompt) => void sendMessage(prompt)}
         onDismissRetry={() => setRetryNotice(null)}
         onDismissError={() => setErrorDismissed(true)}
@@ -895,9 +1292,57 @@ export function App() {
         onSaveDefaults={saveDefaults}
         onExport={(format) => void exportSession(format)}
         onToast={pushToast}
+        onOpenAdmin={() => {
+          setAdminTab('providers');
+          setAdminOpen(true);
+        }}
+        onSwitchAgent={switchAgent}
+        version={boot?.version}
       />
 
-      <GoalDialog open={goalOpen} goal={snapshot?.goal ?? null} onClose={() => setGoalOpen(false)} onSave={saveGoal} />
+      <Suspense fallback={null}>
+        <AdminDialog
+          open={adminOpen}
+          tab={adminTab}
+          onTabChange={setAdminTab}
+          onClose={() => setAdminOpen(false)}
+          config={uiConfig}
+          agents={boot?.agents ?? []}
+          workspaces={workspaces}
+          activeWorkspace={activeWorkspaceId ?? currentWorkspace?.id ?? null}
+          session={currentSession}
+          onToast={pushToast}
+          onReload={async () => {
+            const [data, commandList] = await Promise.all([
+              api.bootstrap(),
+              api.commands.list(),
+            ]);
+            setBoot(data);
+            setWorkspaces(data.workspaces);
+            setCommands(commandList);
+            void refreshSessions();
+            void refreshSnapshot();
+          }}
+        />
+      </Suspense>
+
+      <CommandPreview
+        command={previewCommand}
+        initialArgs={previewCommandArgs}
+        onClose={() => {
+          setPreviewCommand(null);
+          setPreviewCommandArgs('');
+        }}
+        onRun={runCustomCommand}
+        onToast={pushToast}
+      />
+
+      <GoalDialog
+        open={goalOpen}
+        goal={snapshot?.goal ?? null}
+        onClose={() => setGoalOpen(false)}
+        onSave={saveGoal}
+      />
 
       <CommandPalette
         open={paletteOpen}
@@ -905,8 +1350,13 @@ export function App() {
         onClose={() => setPaletteOpen(false)}
         onSelectSession={selectSession}
         onNewSession={() => void createSession()}
-        onOpenSettings={() => { setSettingsTab('general'); setSettingsOpen(true); }}
-        onToggleTheme={() => changeTheme(themeSetting === 'dark' ? 'light' : 'dark')}
+        onOpenSettings={() => {
+          setSettingsTab('general');
+          setSettingsOpen(true);
+        }}
+        onToggleTheme={() =>
+          changeTheme(themeSetting === 'dark' ? 'light' : 'dark')
+        }
         onStop={() => void stop()}
         onResume={() => void resume()}
         onCompact={() => void compact()}
@@ -914,17 +1364,45 @@ export function App() {
         onFocusComposer={focusComposer}
       />
 
-      <Modal open={helpOpen} title={t('app.shortcuts')} onClose={() => setHelpOpen(false)}>
+      <Modal
+        open={helpOpen}
+        title={t('app.shortcuts')}
+        onClose={() => setHelpOpen(false)}
+      >
         <dl className="shortcut-list">
-          <div><dt><kbd>⌘/Ctrl</kbd> + <kbd>K</kbd></dt><dd>{t('app.shortcut.palette')}</dd></div>
-          <div><dt><kbd>⌘/Ctrl</kbd> + <kbd>N</kbd></dt><dd>{t('app.shortcut.new')}</dd></div>
-          <div><dt><kbd>Enter</kbd></dt><dd>{t('chat.send')}</dd></div>
-          <div><dt><kbd>Shift</kbd> + <kbd>Enter</kbd></dt><dd>{t('chat.composer.placeholder')}</dd></div>
+          <div>
+            <dt>
+              <kbd>⌘/Ctrl</kbd> + <kbd>K</kbd>
+            </dt>
+            <dd>{t('app.shortcut.palette')}</dd>
+          </div>
+          <div>
+            <dt>
+              <kbd>⌘/Ctrl</kbd> + <kbd>N</kbd>
+            </dt>
+            <dd>{t('app.shortcut.new')}</dd>
+          </div>
+          <div>
+            <dt>
+              <kbd>Enter</kbd>
+            </dt>
+            <dd>{t('chat.send')}</dd>
+          </div>
+          <div>
+            <dt>
+              <kbd>Shift</kbd> + <kbd>Enter</kbd>
+            </dt>
+            <dd>{t('chat.composer.placeholder')}</dd>
+          </div>
         </dl>
         <p className="muted small">{t('palette.hint')}</p>
       </Modal>
 
-      <Modal open={info !== null} title={info?.title ?? ''} onClose={() => setInfo(null)}>
+      <Modal
+        open={info !== null}
+        title={info?.title ?? ''}
+        onClose={() => setInfo(null)}
+      >
         <p className="muted">{info?.body}</p>
       </Modal>
 
@@ -934,7 +1412,11 @@ export function App() {
         onClose={() => setEditingMessage(null)}
         footer={
           <>
-            <button type="button" className="text-button" onClick={() => setEditingMessage(null)}>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => setEditingMessage(null)}
+            >
               {t('app.cancel')}
             </button>
             <button
@@ -957,19 +1439,45 @@ export function App() {
         />
       </Modal>
 
-      <Toasts toasts={toasts} onDismiss={(id) => setToasts((current) => current.filter((item) => item.id !== id))} />
+      <Toasts
+        toasts={toasts}
+        onDismiss={(id) =>
+          setToasts((current) => current.filter((item) => item.id !== id))
+        }
+      />
     </div>
   );
 }
 
-function Toasts({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: number) => void }) {
+function Toasts({
+  toasts,
+  onDismiss,
+}: {
+  toasts: Toast[];
+  onDismiss: (id: number) => void;
+}) {
   return (
     <div className="toast-stack" role="region" aria-label="Notifications">
       {toasts.map((toast) => (
-        <div key={toast.id} className={`toast toast-${toast.kind}`} role="status">
-          {toast.kind === 'error' ? <AlertTriangle size={15} aria-hidden="true" /> : toast.kind === 'success' ? <CheckCircle2 size={15} aria-hidden="true" /> : <Info size={15} aria-hidden="true" />}
+        <div
+          key={toast.id}
+          className={`toast toast-${toast.kind}`}
+          role="status"
+        >
+          {toast.kind === 'error' ? (
+            <AlertTriangle size={15} aria-hidden="true" />
+          ) : toast.kind === 'success' ? (
+            <CheckCircle2 size={15} aria-hidden="true" />
+          ) : (
+            <Info size={15} aria-hidden="true" />
+          )}
           <span>{toast.message}</span>
-          <button type="button" className="icon-button" onClick={() => onDismiss(toast.id)} aria-label="Dismiss">
+          <button
+            type="button"
+            className="icon-button"
+            onClick={() => onDismiss(toast.id)}
+            aria-label="Dismiss"
+          >
             <X size={13} aria-hidden="true" />
           </button>
         </div>

@@ -63,11 +63,19 @@ class EventBroker:
 class EventStore:
     def __init__(self, broker: EventBroker) -> None:
         self.broker = broker
+        self.webhooks = None
+
+    def attach_webhooks(self, webhooks) -> None:  # noqa: ANN001
+        self.webhooks = webhooks
 
     async def emit(
         self, db: AsyncSession, session_id: str, event_type: str, payload: dict[str, Any]
     ) -> EventDTO:
-        """Persist and fan out an event. The caller owns state persistence/commit."""
+        """Persist an event and queue fan-out for the owning transaction.
+
+        Database.session() flushes this queue only after a successful commit, so
+        a rolled-back transaction cannot leak phantom SSE/webhook events.
+        """
 
         event = Event(
             session_id=session_id,
@@ -84,17 +92,26 @@ class EventStore:
             payload=payload,
             created_at=event.created_at,
         )
-        # The row is flushed, not yet committed; it is safe to fan out after commit in
-        # practice because the SSE replay path also consults the table. Publish on flush
-        # keeps streaming latency low.
-        self.broker.publish(dto)
+        db.info.setdefault("_pending_events", []).append(dto)
+        db.info["_event_store"] = self
         return dto
+
+    def flush(self, db: AsyncSession) -> None:
+        """Publish events buffered by this transaction after commit."""
+
+        pending = db.info.pop("_pending_events", [])
+        db.info.pop("_event_store", None)
+        for dto in pending:
+            self.broker.publish(dto)
+            if self.webhooks is not None:
+                self.webhooks.schedule(dto)
 
     async def emit_committed(
         self, db: AsyncSession, session_id: str, event_type: str, payload: dict[str, Any]
     ) -> EventDTO:
         dto = await self.emit(db, session_id, event_type, payload)
         await db.commit()
+        self.flush(db)
         return dto
 
     async def replay(

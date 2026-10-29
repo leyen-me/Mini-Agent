@@ -38,10 +38,58 @@ cd ../frontend && pnpm exec playwright test
 | 子进程不继承密钥 | `test_shell_environment_strips_provider_credentials` |
 | 配置层级 / yaml camelCase / 密钥不序列化 | `tests/test_config.py` |
 | 配置示例与 JSON Schema 一致 | `test_example_config_matches_schema_and_loads` |
-| 浏览器端到端（8 条） | `frontend/e2e/app.spec.ts` |
+| 浏览器端到端（13 条） | `frontend/e2e/app.spec.ts` |
+
+## 扩展能力测试证据
+
+| 能力 | 自动化测试 |
+|---|---|
+| 服务商 CRUD、密钥掩码、模型管理 | `test_provider_crud_and_secret_masking` |
+| Agent CRUD、会话默认 Skill、只读强制 Plan | `test_agent_crud_and_session_defaults` |
+| 自定义命令 CRUD、参数渲染 | `test_custom_command_crud_and_render` |
+| 附件上传、消息 raw 多模态与文本提取 | `test_upload_text_and_attachment_message` |
+| 图片上传 + 辅助视觉模型 | `test_read_image_uses_auxiliary_vision_model` |
+| 文件检查点 diff、撤销、重做 | `test_file_checkpoint_undo_redo` |
+| 外部修改冲突阻断覆盖 | `test_external_file_modification_blocks_overwrite` |
+| `.gitignore` 过滤文件树 | `test_workspace_ignores_gitignored_files` |
+| 并行只读工具 | `test_parallel_readonly_tools_execute_and_persist_results` |
+| 会话导出/导入/删除级联 | `test_session_export_import_and_delete` |
+| Webhook 签名投递 + 备份 | `test_webhook_delivery_and_backup` |
+| 恢复在重启前应用 | `test_pending_restore_is_applied_before_startup` |
+| Skill 渐进加载 + 系统 Skill 编辑 | `test_skill_enable_and_load_tool`、`test_system_skill_create_and_delete` |
+| MCP stdio 握手、工具发现、运行时调用 | `test_mcp_stdio_server_and_runtime_tool` |
+| 插件安装/信任/启用/命令/Agent | `test_plugin_install_trust_enable_commands_and_agents` |
+| Hook 环境变量与 stdin | `test_session_start_hook_runs_and_receives_event` |
+| 主模型失败切换备用模型 | `test_runtime_falls_back_to_secondary_model` |
+| Anthropic / OpenAI Responses 流适配与结构化输出 | `tests/test_adapters.py` |
+| DeepSeek Flash 思考开关与强度映射 | `test_deepseek_flash_sends_thinking_switch_and_effort` |
+| 工作区切换后主区/会话一致 | 前端逻辑修复；`Composer.test.tsx`（命令输入）、`GoalDialog.test.tsx` |
+| 自定义命令直接输入参数进入预览 | `Composer.test.tsx` |
+| Goal in_progress 不丢失 | `GoalDialog.test.tsx` |
+| 顶栏主题持久化 | `Header` 复用 `changeTheme`；E2E settings theme |
+| 版本号来自 bootstrap | `SettingsDialog` version prop |
+| LLM 压缩摘要 | `test_manual_compaction_uses_model_summary` |
+| 前台子 Agent 结果回传与父子关系 | `test_foreground_subagent_returns_summary` |
+| 后台子 Agent 任务追踪 | `test_background_subagent_is_tracked_as_task` |
+| 指标、日志导出、保留策略、策略查看 | `test_metrics_and_log_export` |
+| 搜索解析与运行时工具 | `test_ddg_search_parser_extracts_results`、`test_web_search_tool_uses_configured_provider_and_parses_results` |
+| 自动格式化 | `test_write_file_runs_auto_formatter_and_records_formatted_diff` |
+| 压缩后重载 AGENTS.md | `test_compaction_reloads_agents_md_into_frozen_prompt` |
+| Shell 沙箱选择 | `tests/test_sandbox.py` |
+| 模型能力探测 | `test_model_capability_inference` |
+| 工作区别名/删除 | `test_workspace_alias_and_delete` |
+| Python SDK 鉴权与请求 | `tests/test_sdk.py` |
+| 静态 API Token / 限流 / 代理防伪造 | `tests/test_api_auth.py` |
+| 余额归一化与代理/CA 传递 | `test_provider_balance_normalizes_and_uses_network_config` |
+| 恢复完整性校验与失败回滚 | `test_invalid_restore_rolls_back_old_database` |
+| 权限 Grant 精确匹配 | `test_always_allow_grant_is_exact_and_cannot_be_glob_expanded` |
+| Webhook 私网拦截 | `test_webhook_rejects_private_target_by_default` |
+| 已有数据从旧 revision 升级到 head | `test_migrations_upgrade_existing_rows_to_head` |
+| 虚拟列表 / 数学公式 / Mermaid | `VirtualList.test.tsx`、`Markdown.test.tsx`、`MermaidBlock.test.tsx` |
 
 ## 未纳入本清单的说明
 
-- 性能指标（首 token 100ms、1 万条消息流畅、冷启动 <3s）未做严格基准；仅完成了功能级验证。
+- 性能指标（首 token 100ms、1 万条消息流畅、冷启动 <3s）未做严格基准；仅完成了功能级验证与长列表虚拟化实现。
 - 故障注入以“构造数据库状态 + 重启 + 前端刷新”为主，未做真实网络断开/进程 kill -9 的混沌测试。
-- 真实 DeepSeek 调用需要 `DEEPSEEK_API_KEY`；自动化测试全部使用 Mock/Scripted Gateway，避免外部依赖和费用。
+- 真实 DeepSeek / Anthropic / OpenAI 调用需要对应 Key；自动化测试使用 Mock/Scripted Gateway + 本地假 MCP/HTTP 服务，避免外部依赖和费用。
+- 明确排除：账号/多租户/RBAC/审计/配额（原第 6 项）、高级分享隐藏/字段级脱敏（原第 11 项）。

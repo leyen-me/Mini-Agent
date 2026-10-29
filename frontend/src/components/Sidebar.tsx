@@ -3,6 +3,7 @@ import {
   Bot,
   Command,
   FolderTree,
+  GitBranch,
   MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
@@ -12,7 +13,9 @@ import {
   Plus,
   Search,
   Settings,
+  Settings2,
   Sparkles,
+  Trash2,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { Session, Workspace } from '../api/types';
@@ -35,6 +38,8 @@ interface Props {
   onOpenSkills: () => void;
   onOpenMcp: () => void;
   onOpenAgents: () => void;
+  onOpenAdmin: () => void;
+  onDeleteSession: (session: Session) => void;
   onOpenPalette: () => void;
   onSearch: (query: string) => void | Promise<void>;
   onWorkspaceChange: (id: string) => void;
@@ -61,6 +66,8 @@ export function Sidebar({
   onOpenSkills,
   onOpenMcp,
   onOpenAgents,
+  onOpenAdmin,
+  onDeleteSession,
   onOpenPalette,
   onSearch,
   onWorkspaceChange,
@@ -109,7 +116,8 @@ export function Sidebar({
 
   const visible = sessions.filter((session) => {
     if (filter === 'all') return true;
-    if (filter === 'running') return session.status === 'running' || session.status === 'compacting';
+    if (filter === 'running')
+      return session.status === 'running' || session.status === 'compacting';
     if (filter === 'waiting_user') return session.status === 'waiting_user';
     return session.status === 'error';
   });
@@ -143,33 +151,64 @@ export function Sidebar({
               className="icon-button collapse-button"
               onClick={onToggleCollapse}
               title={collapsed ? t('app.sessions') : t('app.sidebar.collapse')}
-              aria-label={collapsed ? t('app.sessions') : t('app.sidebar.collapse')}
+              aria-label={
+                collapsed ? t('app.sessions') : t('app.sidebar.collapse')
+              }
             >
-              {collapsed ? <PanelLeftOpen size={16} aria-hidden="true" /> : <PanelLeftClose size={16} aria-hidden="true" />}
+              {collapsed ? (
+                <PanelLeftOpen size={16} aria-hidden="true" />
+              ) : (
+                <PanelLeftClose size={16} aria-hidden="true" />
+              )}
             </button>
           )}
         </div>
 
-        <button type="button" className="new-session-button" onClick={onNewSession} title={t('app.newSession')}>
+        <button
+          type="button"
+          className="new-session-button"
+          onClick={onNewSession}
+          title={t('app.newSession')}
+        >
           <Plus size={16} aria-hidden="true" />
           {!collapsed && <span>{t('app.newSession')}</span>}
           {!collapsed && <kbd>⌘N</kbd>}
         </button>
 
         <nav className="rail-actions" aria-label={t('app.skills')}>
-          <button type="button" className="rail-button" onClick={onOpenSkills} title={t('app.skills')}>
+          <button
+            type="button"
+            className="rail-button"
+            onClick={onOpenSkills}
+            title={t('app.skills')}
+          >
             <Sparkles size={15} aria-hidden="true" />
             {!collapsed && <span>{t('app.skills')}</span>}
           </button>
-          <button type="button" className="rail-button" onClick={onOpenMcp} title={t('app.mcp')}>
+          <button
+            type="button"
+            className="rail-button"
+            onClick={onOpenMcp}
+            title={t('app.mcp')}
+          >
             <Plug size={15} aria-hidden="true" />
             {!collapsed && <span>{t('app.mcp')}</span>}
           </button>
-          <button type="button" className="rail-button" onClick={onOpenAgents} title={t('app.agents')}>
+          <button
+            type="button"
+            className="rail-button"
+            onClick={onOpenAgents}
+            title={t('app.agents')}
+          >
             <Bot size={15} aria-hidden="true" />
             {!collapsed && <span>{t('app.agents')}</span>}
           </button>
-          <button type="button" className="rail-button" onClick={onOpenPalette} title={t('app.commandPalette')}>
+          <button
+            type="button"
+            className="rail-button"
+            onClick={onOpenPalette}
+            title={t('app.commandPalette')}
+          >
             <Command size={15} aria-hidden="true" />
             {!collapsed && <span>{t('app.commandPalette')}</span>}
           </button>
@@ -185,7 +224,7 @@ export function Sidebar({
             >
               {workspaces.map((workspace) => (
                 <option key={workspace.id} value={workspace.id}>
-                  {workspace.name}
+                  {workspace.alias || workspace.name}
                 </option>
               ))}
             </select>
@@ -228,16 +267,18 @@ export function Sidebar({
                 />
               </div>
               <div className="filter-row">
-                {(['all', 'running', 'waiting_user', 'error'] as const).map((value) => (
-                  <button
-                    type="button"
-                    key={value}
-                    className={filter === value ? 'active' : ''}
-                    onClick={() => setFilter(value)}
-                  >
-                    {value === 'all' ? t('app.all') : t(`status.${value}`)}
-                  </button>
-                ))}
+                {(['all', 'running', 'waiting_user', 'error'] as const).map(
+                  (value) => (
+                    <button
+                      type="button"
+                      key={value}
+                      className={filter === value ? 'active' : ''}
+                      onClick={() => setFilter(value)}
+                    >
+                      {value === 'all' ? t('app.all') : t(`status.${value}`)}
+                    </button>
+                  ),
+                )}
               </div>
               <div className="session-list" role="list">
                 {visible.length === 0 && (
@@ -253,14 +294,27 @@ export function Sidebar({
                     className={`session-item ${selectedId === session.id ? 'active' : ''}`}
                     role="listitem"
                   >
-                    <button type="button" className="session-main" onClick={() => onSelect(session.id)}>
+                    <button
+                      type="button"
+                      className="session-main"
+                      onClick={() => onSelect(session.id)}
+                    >
                       <div className="session-title-row">
-                        {session.pinned && <Pin size={11} aria-label={t('app.pinned')} />}
-                        <span className="session-title">{session.title || t('app.newSession')}</span>
+                        {session.pinned && (
+                          <Pin size={11} aria-label={t('app.pinned')} />
+                        )}
+                        {session.parentSessionId && (
+                          <GitBranch size={11} aria-label="子 Agent" />
+                        )}
+                        <span className="session-title">
+                          {session.title || t('app.newSession')}
+                        </span>
                       </div>
                       <div className="session-sub">
                         <SessionStatusBadge status={session.status} compact />
-                        <span className="session-time">{relativeTime(session.updatedAt, language)}</span>
+                        <span className="session-time">
+                          {relativeTime(session.updatedAt, language)}
+                        </span>
                       </div>
                     </button>
                     <div className="session-actions">
@@ -268,10 +322,16 @@ export function Sidebar({
                         type="button"
                         className="icon-button"
                         title={session.pinned ? t('app.unpin') : t('app.pin')}
-                        aria-label={session.pinned ? t('app.unpin') : t('app.pin')}
+                        aria-label={
+                          session.pinned ? t('app.unpin') : t('app.pin')
+                        }
                         onClick={() => onPin(session, !session.pinned)}
                       >
-                        {session.pinned ? <PinOff size={13} aria-hidden="true" /> : <Pin size={13} aria-hidden="true" />}
+                        {session.pinned ? (
+                          <PinOff size={13} aria-hidden="true" />
+                        ) : (
+                          <Pin size={13} aria-hidden="true" />
+                        )}
                       </button>
                       <button
                         type="button"
@@ -282,23 +342,49 @@ export function Sidebar({
                       >
                         <Archive size={13} aria-hidden="true" />
                       </button>
+                      <button
+                        type="button"
+                        className="icon-button danger"
+                        title={t('app.delete')}
+                        aria-label={t('app.delete')}
+                        onClick={() => onDeleteSession(session)}
+                      >
+                        <Trash2 size={13} aria-hidden="true" />
+                      </button>
                     </div>
                   </div>
                 ))}
               </div>
             </>
           ) : activeWorkspaceId ? (
-            <FileTree workspaceId={activeWorkspaceId} onReference={onReferenceFile} />
+            <FileTree
+              workspaceId={activeWorkspaceId}
+              onReference={onReferenceFile}
+            />
           ) : null}
         </div>
       )}
 
       <div className="sidebar-bottom">
-        <button type="button" className="rail-button" onClick={onOpenSettings} title={t('app.settings')}>
+        <button
+          type="button"
+          className="rail-button"
+          onClick={onOpenAdmin}
+          title={t('app.admin')}
+        >
+          <Settings2 size={16} aria-hidden="true" />
+          {!collapsed && <span>{t('app.admin')}</span>}
+        </button>
+        <button
+          type="button"
+          className="rail-button"
+          onClick={onOpenSettings}
+          title={t('app.settings')}
+        >
           <Settings size={16} aria-hidden="true" />
           {!collapsed && <span>{t('app.settings')}</span>}
         </button>
-        {!collapsed && <span className="sidebar-version">v0.1</span>}
+        {!collapsed && <span className="sidebar-version">v0.2</span>}
       </div>
 
       {!mobile && !collapsed && (

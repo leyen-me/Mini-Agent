@@ -17,6 +17,7 @@ import uvicorn
 from asgi_lifespan import LifespanManager
 
 from mini_agent.config import (
+    ApiConfig,
     AppConfig,
     BudgetConfig,
     CompactionConfig,
@@ -40,6 +41,7 @@ class FakeResponse:
     delay: float = 0.0
     error: ModelError | None = None
     usage: Usage | None = None
+    finish_reason: str = ""
 
 
 class ScriptedGateway(BaseGateway):
@@ -102,7 +104,7 @@ class ScriptedGateway(BaseGateway):
             reasoning=spec.reasoning,
             tool_calls=calls,
             usage=usage,
-            finish_reason="tool_calls" if calls else "stop",
+            finish_reason=spec.finish_reason or ("tool_calls" if calls else "stop"),
         )
 
 
@@ -127,6 +129,7 @@ def make_config(tmp_path: Path, **overrides: Any) -> AppConfig:
         budget=BudgetConfig(max_tool_output_chars=8_000),
         compaction=CompactionConfig(keep_recent_tokens=600),
         tasks=TaskConfig(wait_timeout_seconds=10, auto_continue_after_completion=True),
+        api=ApiConfig(rate_limit_per_minute=0),
         data_dir=data_dir,
         workspace_root=workspace_root,
     )
@@ -171,7 +174,9 @@ class Harness:
         return await self.wait_for(
             session_id,
             lambda snap: (
-                snap["session"]["status"] in {"idle", "error", "paused"} and not snap.get("active", False)
+                snap["session"]["status"] in {"idle", "error", "paused"}
+                and not snap.get("active", False)
+                and not snap.get("queue")
             ),
             timeout,
         )

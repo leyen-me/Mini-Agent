@@ -20,6 +20,12 @@ defaults:
   reasoningLevel: "off"
   agent: build
   mode: build
+  # 主模型失败时按顺序尝试的备用模型（仅使用已配置密钥的模型）。
+  fallbackModels: []
+  # 当前模型不支持视觉时，read_image 使用的辅助模型。
+  visionModel: ""
+  # 压缩摘要模型；留空使用默认模型。
+  compactionModel: ""
 
 providers:
   - id: mock
@@ -40,6 +46,8 @@ providers:
     baseUrl: https://api.deepseek.com
     apiKey: ${env:DEEPSEEK_API_KEY}
     enabled: true
+    supportsBalance: true
+    balancePath: /user/balance
     models:
       - id: deepseek-chat
         name: DeepSeek Chat
@@ -61,6 +69,18 @@ providers:
           inputPerMillion: 0.55
           outputPerMillion: 2.19
           cacheHitPerMillion: 0.14
+      - id: deepseek-flash
+        name: DeepSeek Flash
+        contextWindow: 128000
+        maxOutput: 8192
+        capabilities: [text, tools, reasoning]
+        reasoningLevels: ["off", low, medium, high, max]
+      - id: deepseek-v4-pro
+        name: DeepSeek V4 Pro
+        contextWindow: 128000
+        maxOutput: 8192
+        capabilities: [text, tools, reasoning]
+        reasoningLevels: ["off", low, medium, high, max]
 
 permissions:
   read:
@@ -99,11 +119,6 @@ budget:
   maxRepeatFailures: 3
   maxToolOutputChars: 24000
 
-compaction:
-  enabled: true
-  keepRecentTokens: 4000
-  triggerRatio: 0.85
-
 tasks:
   waitTimeoutSeconds: 120
   autoContinueAfterCompletion: true
@@ -117,3 +132,74 @@ security:
 
 dataDir: ./data
 workspaceRoot: ./data/workspaces/demo
+
+
+# ------------------------------------------------------------------ runtime
+compaction:
+  enabled: true
+  keepRecentTokens: 4000
+  triggerRatio: 0.85
+  useModel: true
+  model: ""
+  reloadProjectRules: true
+  summaryMaxTokens: 1200
+
+network:
+  proxy: ""
+  caBundle: ""
+  userAgent: mini-agent/0.2
+
+search:
+  provider: duckduckgo
+  maxResults: 5
+  # Tavily 需要 TAVILY_API_KEY；不要把真实 Key 写进仓库。
+  apiKeyEnv: TAVILY_API_KEY
+
+tools:
+  format:
+    enabled: true
+    commands:
+      .py: "ruff format {path}"
+      .ts: "prettier --write {path}"
+      .tsx: "prettier --write {path}"
+      .js: "prettier --write {path}"
+      .json: "prettier --write {path}"
+
+subagents:
+  maxDepth: 2
+  maxConcurrent: 3
+  timeoutSeconds: 300
+  backgroundTimeoutSeconds: 3600
+
+sandbox:
+  # auto 优先 macOS sandbox-exec、Linux bwrap、再 docker；不可用时回退并返回 warning。
+  mode: auto
+  allowNetwork: false
+  dockerImage: "python:3.12-slim"
+
+retention:
+  eventsDays: 30
+  uploadsDays: 30
+  artifactsDays: 14
+  backupsDays: 30
+  logsDays: 14
+
+backup:
+  enabled: true
+  includeArtifacts: true
+  autoBeforeMigration: true
+
+api:
+  # 设为 true 时必须同时提供 MINI_AGENT_API_TOKEN，否则启动失败
+  requireTokenRemote: false
+  rateLimitPerMinute: 600
+  tokenEnv: MINI_AGENT_API_TOKEN
+
+webhooks:
+  enabled: true
+  maxAttempts: 3
+  timeoutSeconds: 10
+
+hooks:
+  enabled: true
+  events: [session.start, turn.end, tool.before, tool.after, compaction.after]

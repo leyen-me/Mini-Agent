@@ -48,6 +48,8 @@ def build_system_prompt(
     agent: Agent,
     workspace: Workspace,
     created_at: str,
+    skills: list[dict] | None = None,
+    mcp_servers: list[dict] | None = None,
 ) -> tuple[str, str]:
     date = created_at[:10]
     env_info = "\n".join(
@@ -57,6 +59,14 @@ def build_system_prompt(
             f"- 会话创建日期：{date}",
         ]
     )
+    skill_lines = [
+        f"- {item['name']}（{item.get('scope', '')}）：{item.get('description', '')}"
+        for item in sorted(skills or [], key=lambda item: item["name"])
+    ]
+    mcp_lines = [
+        f"- {item['name']}：{item.get('description', '')}"
+        for item in sorted(mcp_servers or [], key=lambda item: item["name"])
+    ]
     prompt = "\n\n".join(
         [
             BASE_PROMPT,
@@ -64,8 +74,9 @@ def build_system_prompt(
             PLAN_PROMPT if agent.read_only else BUILD_PROMPT,
             "## 环境信息（固定）\n" + env_info,
             "## 项目规则（AGENTS.md）\n" + _read_project_rules(Path(workspace.root_path)),
-            "## 已启用的 Skill\n（未启用 Skill；只能通过元信息渐进式加载）",
-            "## 已启用的 MCP\n（未启用 MCP）",
+            "## 已启用的 Skill（仅元信息，需要时调用 load_skill 加载全文）\n"
+            + ("\n".join(skill_lines) if skill_lines else "（未启用 Skill）"),
+            "## 已启用的 MCP\n" + ("\n".join(mcp_lines) if mcp_lines else "（未启用 MCP）"),
             "## 输出约定\n工具结果使用 code/message/data/truncated/artifacts 协议；code=0 表示成功。",
         ]
     )

@@ -59,8 +59,13 @@ class Database:
                 yield session
                 await session.commit()
             except Exception:
+                session.info.pop("_pending_events", None)
+                session.info.pop("_event_store", None)
                 await session.rollback()
                 raise
+            store = session.info.pop("_event_store", None)
+            if store is not None:
+                store.flush(session)
 
 
 def run_migrations(data_dir: Path) -> None:

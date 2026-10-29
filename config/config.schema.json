@@ -1,5 +1,61 @@
 {
   "$defs": {
+    "ApiConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "token": {
+          "default": "",
+          "title": "Token",
+          "type": "string"
+        },
+        "tokenEnv": {
+          "default": "MINI_AGENT_API_TOKEN",
+          "title": "Tokenenv",
+          "type": "string"
+        },
+        "requireTokenRemote": {
+          "default": false,
+          "title": "Requiretokenremote",
+          "type": "boolean"
+        },
+        "trustProxyHeaders": {
+          "default": true,
+          "title": "Trustproxyheaders",
+          "type": "boolean"
+        },
+        "rateLimitPerMinute": {
+          "default": 600,
+          "maximum": 100000,
+          "minimum": 0,
+          "title": "Ratelimitperminute",
+          "type": "integer"
+        }
+      },
+      "title": "ApiConfig",
+      "type": "object"
+    },
+    "BackupConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "autoBeforeMigration": {
+          "default": true,
+          "title": "Autobeforemigration",
+          "type": "boolean"
+        },
+        "includeArtifacts": {
+          "default": true,
+          "title": "Includeartifacts",
+          "type": "boolean"
+        }
+      },
+      "title": "BackupConfig",
+      "type": "object"
+    },
     "BudgetConfig": {
       "additionalProperties": false,
       "properties": {
@@ -93,6 +149,35 @@
           "maximum": 1.0,
           "title": "Triggerratio",
           "type": "number"
+        },
+        "useModel": {
+          "default": false,
+          "title": "Usemodel",
+          "type": "boolean"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "summaryMaxTokens": {
+          "default": 2000,
+          "maximum": 16000,
+          "minimum": 256,
+          "title": "Summarymaxtokens",
+          "type": "integer"
+        },
+        "reloadProjectRules": {
+          "default": true,
+          "title": "Reloadprojectrules",
+          "type": "boolean"
         }
       },
       "title": "CompactionConfig",
@@ -124,9 +209,59 @@
           ],
           "title": "Mode",
           "type": "string"
+        },
+        "fallbackModels": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fallbackmodels",
+          "type": "array"
+        },
+        "visionModel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Visionmodel"
+        },
+        "compactionModel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Compactionmodel"
         }
       },
       "title": "DefaultsConfig",
+      "type": "object"
+    },
+    "FormatterConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "commands": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Commands",
+          "type": "object"
+        }
+      },
+      "title": "FormatterConfig",
       "type": "object"
     },
     "GeneralConfig": {
@@ -158,6 +293,37 @@
         }
       },
       "title": "GeneralConfig",
+      "type": "object"
+    },
+    "HookConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "events": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Events",
+          "type": "array"
+        }
+      },
+      "title": "HookConfig",
+      "type": "object"
+    },
+    "MetricsConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        }
+      },
+      "title": "MetricsConfig",
       "type": "object"
     },
     "ModelConfig": {
@@ -202,6 +368,11 @@
         },
         "pricing": {
           "$ref": "#/$defs/ModelPricing"
+        },
+        "structuredOutput": {
+          "default": false,
+          "title": "Structuredoutput",
+          "type": "boolean"
         }
       },
       "required": [
@@ -232,6 +403,60 @@
       "title": "ModelPricing",
       "type": "object"
     },
+    "NetworkConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "proxy": {
+          "default": "",
+          "title": "Proxy",
+          "type": "string"
+        },
+        "caBundle": {
+          "default": "",
+          "title": "Cabundle",
+          "type": "string"
+        },
+        "userAgent": {
+          "default": "MiniAgent/0.2",
+          "title": "Useragent",
+          "type": "string"
+        }
+      },
+      "title": "NetworkConfig",
+      "type": "object"
+    },
+    "OAuthConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "tokenUrl": {
+          "default": "",
+          "title": "Tokenurl",
+          "type": "string"
+        },
+        "clientId": {
+          "default": "",
+          "title": "Clientid",
+          "type": "string"
+        },
+        "clientSecret": {
+          "default": "",
+          "title": "Clientsecret",
+          "type": "string"
+        },
+        "scope": {
+          "default": "",
+          "title": "Scope",
+          "type": "string"
+        },
+        "audience": {
+          "default": "",
+          "title": "Audience",
+          "type": "string"
+        }
+      },
+      "title": "OAuthConfig",
+      "type": "object"
+    },
     "PermissionConfig": {
       "additionalProperties": false,
       "properties": {
@@ -251,6 +476,15 @@
           "$ref": "#/$defs/CommandPermission"
         },
         "task": {
+          "$ref": "#/$defs/CommandPermission"
+        },
+        "mcp": {
+          "$ref": "#/$defs/CommandPermission"
+        },
+        "plugin": {
+          "$ref": "#/$defs/CommandPermission"
+        },
+        "subagent": {
           "$ref": "#/$defs/CommandPermission"
         }
       },
@@ -276,6 +510,8 @@
           "default": "openai-chat",
           "enum": [
             "openai-chat",
+            "openai-responses",
+            "anthropic",
             "mock"
           ],
           "title": "Protocol",
@@ -284,6 +520,16 @@
         "baseUrl": {
           "default": "https://api.deepseek.com",
           "title": "Baseurl",
+          "type": "string"
+        },
+        "authType": {
+          "default": "api_key",
+          "enum": [
+            "api_key",
+            "oauth_client_credentials",
+            "none"
+          ],
+          "title": "Authtype",
           "type": "string"
         },
         "apiKey": {
@@ -317,10 +563,31 @@
           "title": "Headers",
           "type": "object"
         },
+        "oauth": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OAuthConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "enabled": {
           "default": true,
           "title": "Enabled",
           "type": "boolean"
+        },
+        "supportsBalance": {
+          "default": false,
+          "title": "Supportsbalance",
+          "type": "boolean"
+        },
+        "balancePath": {
+          "default": "/user/balance",
+          "title": "Balancepath",
+          "type": "string"
         },
         "models": {
           "items": {
@@ -334,6 +601,117 @@
         "id"
       ],
       "title": "ProviderConfig",
+      "type": "object"
+    },
+    "RetentionConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "artifactsDays": {
+          "default": 30,
+          "maximum": 3650,
+          "minimum": 1,
+          "title": "Artifactsdays",
+          "type": "integer"
+        },
+        "eventsDays": {
+          "default": 90,
+          "maximum": 3650,
+          "minimum": 1,
+          "title": "Eventsdays",
+          "type": "integer"
+        },
+        "logsDays": {
+          "default": 30,
+          "maximum": 3650,
+          "minimum": 1,
+          "title": "Logsdays",
+          "type": "integer"
+        },
+        "backupsDays": {
+          "default": 30,
+          "maximum": 3650,
+          "minimum": 1,
+          "title": "Backupsdays",
+          "type": "integer"
+        },
+        "uploadsDays": {
+          "default": 30,
+          "maximum": 3650,
+          "minimum": 1,
+          "title": "Uploadsdays",
+          "type": "integer"
+        }
+      },
+      "title": "RetentionConfig",
+      "type": "object"
+    },
+    "SandboxConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "default": "auto",
+          "enum": [
+            "none",
+            "auto",
+            "sandbox-exec",
+            "bwrap",
+            "docker"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "dockerImage": {
+          "default": "python:3.13-slim",
+          "title": "Dockerimage",
+          "type": "string"
+        },
+        "allowNetwork": {
+          "default": false,
+          "title": "Allownetwork",
+          "type": "boolean"
+        }
+      },
+      "title": "SandboxConfig",
+      "type": "object"
+    },
+    "SearchConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "default": "duckduckgo",
+          "enum": [
+            "duckduckgo",
+            "tavily"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "apiKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Apikey"
+        },
+        "apiKeyEnv": {
+          "default": "TAVILY_API_KEY",
+          "title": "Apikeyenv",
+          "type": "string"
+        },
+        "maxResults": {
+          "default": 5,
+          "maximum": 20,
+          "minimum": 1,
+          "title": "Maxresults",
+          "type": "integer"
+        }
+      },
+      "title": "SearchConfig",
       "type": "object"
     },
     "SecurityConfig": {
@@ -412,6 +790,41 @@
       "title": "ServerConfig",
       "type": "object"
     },
+    "SubagentConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "maxDepth": {
+          "default": 2,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Maxdepth",
+          "type": "integer"
+        },
+        "maxConcurrent": {
+          "default": 3,
+          "maximum": 32,
+          "minimum": 1,
+          "title": "Maxconcurrent",
+          "type": "integer"
+        },
+        "timeoutSeconds": {
+          "default": 600,
+          "maximum": 86400,
+          "minimum": 10,
+          "title": "Timeoutseconds",
+          "type": "integer"
+        },
+        "backgroundTimeoutSeconds": {
+          "default": 3600,
+          "maximum": 86400,
+          "minimum": 10,
+          "title": "Backgroundtimeoutseconds",
+          "type": "integer"
+        }
+      },
+      "title": "SubagentConfig",
+      "type": "object"
+    },
     "TaskConfig": {
       "additionalProperties": false,
       "properties": {
@@ -426,9 +839,57 @@
           "default": true,
           "title": "Autocontinueaftercompletion",
           "type": "boolean"
+        },
+        "maxDurationSeconds": {
+          "default": 3600,
+          "maximum": 86400,
+          "minimum": 1,
+          "title": "Maxdurationseconds",
+          "type": "integer"
         }
       },
       "title": "TaskConfig",
+      "type": "object"
+    },
+    "ToolsConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "parallelReadOnly": {
+          "default": true,
+          "title": "Parallelreadonly",
+          "type": "boolean"
+        },
+        "format": {
+          "$ref": "#/$defs/FormatterConfig"
+        }
+      },
+      "title": "ToolsConfig",
+      "type": "object"
+    },
+    "WebhookConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "maxAttempts": {
+          "default": 3,
+          "maximum": 10,
+          "minimum": 1,
+          "title": "Maxattempts",
+          "type": "integer"
+        },
+        "timeoutSeconds": {
+          "default": 10,
+          "maximum": 120,
+          "minimum": 1,
+          "title": "Timeoutseconds",
+          "type": "integer"
+        }
+      },
+      "title": "WebhookConfig",
       "type": "object"
     }
   },
@@ -465,6 +926,39 @@
     "security": {
       "$ref": "#/$defs/SecurityConfig"
     },
+    "network": {
+      "$ref": "#/$defs/NetworkConfig"
+    },
+    "search": {
+      "$ref": "#/$defs/SearchConfig"
+    },
+    "subagents": {
+      "$ref": "#/$defs/SubagentConfig"
+    },
+    "tools": {
+      "$ref": "#/$defs/ToolsConfig"
+    },
+    "sandbox": {
+      "$ref": "#/$defs/SandboxConfig"
+    },
+    "retention": {
+      "$ref": "#/$defs/RetentionConfig"
+    },
+    "metrics": {
+      "$ref": "#/$defs/MetricsConfig"
+    },
+    "api": {
+      "$ref": "#/$defs/ApiConfig"
+    },
+    "webhooks": {
+      "$ref": "#/$defs/WebhookConfig"
+    },
+    "hooks": {
+      "$ref": "#/$defs/HookConfig"
+    },
+    "backup": {
+      "$ref": "#/$defs/BackupConfig"
+    },
     "dataDir": {
       "format": "path",
       "title": "Datadir",
@@ -487,6 +981,19 @@
       ],
       "default": null,
       "title": "Configpath"
+    },
+    "policyPath": {
+      "anyOf": [
+        {
+          "format": "path",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Policypath"
     },
     "source": {
       "default": "built-in",

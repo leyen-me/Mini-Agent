@@ -11,7 +11,10 @@ interface Props {
   onSave: (body: {
     objective: string;
     criteria: string;
-    tasks: Array<{ title: string; status: 'pending' | 'in_progress' | 'completed' | 'blocked' }>;
+    tasks: Array<{
+      title: string;
+      status: 'pending' | 'in_progress' | 'completed' | 'blocked';
+    }>;
   }) => Promise<void>;
 }
 
@@ -27,7 +30,21 @@ export function GoalDialog({ open, goal, onClose, onSave }: Props) {
     if (!open) return;
     setObjective(goal?.objective ?? '');
     setCriteria(goal?.criteria ?? '');
-    setTasks(goal?.tasks.map((task) => `${task.status === 'completed' ? '[x] ' : ''}${task.title}`).join('\n') ?? '');
+    setTasks(
+      goal?.tasks
+        .map((task) => {
+          const marker =
+            task.status === 'completed'
+              ? '[x] '
+              : task.status === 'in_progress'
+                ? '[>] '
+                : task.status === 'blocked'
+                  ? '[!] '
+                  : '';
+          return `${marker}${task.title}`;
+        })
+        .join('\n') ?? '',
+    );
     setError(null);
   }, [open, goal]);
 
@@ -45,16 +62,25 @@ export function GoalDialog({ open, goal, onClose, onSave }: Props) {
         .filter(Boolean)
         .map((line) => {
           const done = /^\[[xX]\]\s*/.test(line);
-          const blocked = /^\[!\]\s*/.test(line);
+          const active = /^\[>\]\s*/.test(line);
+          const blocked = /^\[[!]\]\s*/.test(line);
           return {
-            title: line.replace(/^\[[xX!]\]\s*/, ''),
-            status: (done ? 'completed' : blocked ? 'blocked' : 'pending') as
-              | 'completed'
-              | 'blocked'
-              | 'pending',
+            title: line.replace(/^\[[xX!>]\]\s*/, ''),
+            status: (done
+              ? 'completed'
+              : active
+                ? 'in_progress'
+                : blocked
+                  ? 'blocked'
+                  : 'pending') as
+              'completed' | 'in_progress' | 'blocked' | 'pending',
           };
         });
-      await onSave({ objective: objective.trim(), criteria: criteria.trim(), tasks: parsed });
+      await onSave({
+        objective: objective.trim(),
+        criteria: criteria.trim(),
+        tasks: parsed,
+      });
       onClose();
     } catch (caught) {
       setError((caught as Error).message);
@@ -73,7 +99,12 @@ export function GoalDialog({ open, goal, onClose, onSave }: Props) {
           <button type="button" className="text-button" onClick={onClose}>
             {t('app.cancel')}
           </button>
-          <button type="button" className="primary-button" disabled={saving} onClick={() => void submit()}>
+          <button
+            type="button"
+            className="primary-button"
+            disabled={saving}
+            onClick={() => void submit()}
+          >
             <Target size={14} aria-hidden="true" /> {t('chat.goal.save')}
           </button>
         </>
@@ -110,7 +141,11 @@ export function GoalDialog({ open, goal, onClose, onSave }: Props) {
           />
           <small className="muted">{t('chat.goal.taskPlaceholder')}</small>
         </label>
-        {error && <p className="form-error" role="alert">{error}</p>}
+        {error && (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        )}
       </div>
     </Modal>
   );

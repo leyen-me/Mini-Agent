@@ -22,13 +22,27 @@ describe('Markdown safety and rendering', () => {
       '[safe](https://example.com)',
     ].join('\n');
     const { container } = renderWithUi(<Markdown>{source}</Markdown>);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Heading');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+      'Heading',
+    );
     expect(screen.getByRole('table')).toBeInTheDocument();
-    expect(container.querySelector('pre code')?.textContent?.trim()).toBe('const answer = 42;');
+    expect(container.querySelector('pre code')?.textContent?.trim()).toBe(
+      'const answer = 42;',
+    );
     expect(container.querySelector('script')).toBeNull();
     expect(container.querySelector('img')).toBeNull();
     const link = screen.getByRole('link', { name: 'safe' });
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
+  });
+});
+
+describe('math rendering', () => {
+  it('renders KaTeX inline and block formulas', () => {
+    const source = 'Inline $x^2 + y^2$ and block:\n\n$$\\frac{1}{2}$$';
+    const { container } = renderWithUi(<Markdown>{source}</Markdown>);
+    expect(container.querySelectorAll('.katex').length).toBeGreaterThanOrEqual(
+      2,
+    );
   });
 });
