@@ -1,0 +1,119 @@
+# Mini Agent configuration example.
+# Copy to config/mini-agent.yaml or point MINI_AGENT_CONFIG at this file.
+# Secrets belong in data/secrets.yaml or environment variables, not here.
+general:
+  language: zh-CN
+  theme: system
+  notifications: true
+
+server:
+  host: 127.0.0.1
+  port: 8787
+  logLevel: INFO
+  requestTimeoutSeconds: 120
+  corsOrigins:
+    - http://localhost:5173
+    - http://127.0.0.1:5173
+
+defaults:
+  model: mock/echo
+  reasoningLevel: "off"
+  agent: build
+  mode: build
+
+providers:
+  - id: mock
+    name: 离线 Mock 模型
+    protocol: mock
+    baseUrl: ""
+    enabled: true
+    models:
+      - id: echo
+        name: Mock Echo (离线演示)
+        contextWindow: 32000
+        maxOutput: 4000
+        capabilities: [text, tools, reasoning]
+        reasoningLevels: ["off", low, high]
+  - id: deepseek
+    name: DeepSeek
+    protocol: openai-chat
+    baseUrl: https://api.deepseek.com
+    apiKey: ${env:DEEPSEEK_API_KEY}
+    enabled: true
+    models:
+      - id: deepseek-chat
+        name: DeepSeek Chat
+        contextWindow: 128000
+        maxOutput: 8192
+        capabilities: [text, tools]
+        reasoningLevels: ["off"]
+        pricing:
+          inputPerMillion: 0.27
+          outputPerMillion: 1.10
+          cacheHitPerMillion: 0.07
+      - id: deepseek-reasoner
+        name: DeepSeek Reasoner
+        contextWindow: 128000
+        maxOutput: 8192
+        capabilities: [text, reasoning]
+        reasoningLevels: [high]
+        pricing:
+          inputPerMillion: 0.55
+          outputPerMillion: 2.19
+          cacheHitPerMillion: 0.14
+
+permissions:
+  read:
+    default: allow
+    allow: []
+    deny: []
+  write:
+    default: ask
+    allow: []
+    deny: []
+  shell:
+    default: ask
+    allow:
+      - git status
+      - git diff *
+    deny:
+      - git push *
+      - rm -rf *
+  network:
+    default: ask
+    allow: []
+    deny: []
+  interaction:
+    default: allow
+    allow: []
+    deny: []
+  task:
+    default: allow
+    allow: []
+    deny: []
+
+budget:
+  maxStepsPerTurn: 50
+  maxDurationSeconds: 900
+  maxCostPerTurn: 1.0
+  maxRepeatFailures: 3
+  maxToolOutputChars: 24000
+
+compaction:
+  enabled: true
+  keepRecentTokens: 4000
+  triggerRatio: 0.85
+
+tasks:
+  waitTimeoutSeconds: 120
+  autoContinueAfterCompletion: true
+
+security:
+  allowOutsideWorkspace: false
+  maxUploadMb: 20
+  maxFileReadBytes: 512000
+  shellTimeoutSeconds: 60
+  blockPrivateNetwork: true
+
+dataDir: ./data
+workspaceRoot: ./data/workspaces/demo

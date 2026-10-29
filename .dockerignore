@@ -1,0 +1,11 @@
+.git
+.gitignore
+data
+.env
+**/__pycache__
+**/.venv
+**/node_modules
+frontend/dist
+frontend/test-results
+frontend/playwright-report
+docs/screenshots

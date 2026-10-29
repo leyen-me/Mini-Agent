@@ -1,0 +1,501 @@
+{
+  "$defs": {
+    "BudgetConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "maxStepsPerTurn": {
+          "default": 50,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Maxstepsperturn",
+          "type": "integer"
+        },
+        "maxDurationSeconds": {
+          "default": 900,
+          "maximum": 86400,
+          "minimum": 10,
+          "title": "Maxdurationseconds",
+          "type": "integer"
+        },
+        "maxCostPerTurn": {
+          "default": 1.0,
+          "minimum": 0,
+          "title": "Maxcostperturn",
+          "type": "number"
+        },
+        "maxRepeatFailures": {
+          "default": 3,
+          "maximum": 20,
+          "minimum": 1,
+          "title": "Maxrepeatfailures",
+          "type": "integer"
+        },
+        "maxToolOutputChars": {
+          "default": 24000,
+          "maximum": 2000000,
+          "minimum": 1000,
+          "title": "Maxtooloutputchars",
+          "type": "integer"
+        }
+      },
+      "title": "BudgetConfig",
+      "type": "object"
+    },
+    "CommandPermission": {
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "enum": [
+            "allow",
+            "ask",
+            "deny"
+          ],
+          "type": "string",
+          "default": "ask",
+          "title": "Default"
+        },
+        "allow": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allow",
+          "type": "array"
+        },
+        "deny": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Deny",
+          "type": "array"
+        }
+      },
+      "title": "CommandPermission",
+      "type": "object"
+    },
+    "CompactionConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "keepRecentTokens": {
+          "default": 4000,
+          "maximum": 200000,
+          "minimum": 500,
+          "title": "Keeprecenttokens",
+          "type": "integer"
+        },
+        "triggerRatio": {
+          "default": 0.85,
+          "exclusiveMinimum": 0,
+          "maximum": 1.0,
+          "title": "Triggerratio",
+          "type": "number"
+        }
+      },
+      "title": "CompactionConfig",
+      "type": "object"
+    },
+    "DefaultsConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "default": "mock/echo",
+          "title": "Model",
+          "type": "string"
+        },
+        "reasoningLevel": {
+          "default": "off",
+          "title": "Reasoninglevel",
+          "type": "string"
+        },
+        "agent": {
+          "default": "build",
+          "title": "Agent",
+          "type": "string"
+        },
+        "mode": {
+          "default": "build",
+          "enum": [
+            "build",
+            "plan"
+          ],
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "DefaultsConfig",
+      "type": "object"
+    },
+    "GeneralConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "default": "zh-CN",
+          "enum": [
+            "zh-CN",
+            "en-US"
+          ],
+          "title": "Language",
+          "type": "string"
+        },
+        "theme": {
+          "default": "system",
+          "enum": [
+            "light",
+            "dark",
+            "system"
+          ],
+          "title": "Theme",
+          "type": "string"
+        },
+        "notifications": {
+          "default": true,
+          "title": "Notifications",
+          "type": "boolean"
+        }
+      },
+      "title": "GeneralConfig",
+      "type": "object"
+    },
+    "ModelConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "title": "Name",
+          "type": "string"
+        },
+        "contextWindow": {
+          "default": 128000,
+          "minimum": 1000,
+          "title": "Contextwindow",
+          "type": "integer"
+        },
+        "maxOutput": {
+          "default": 8192,
+          "minimum": 1,
+          "title": "Maxoutput",
+          "type": "integer"
+        },
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "reasoningLevels": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reasoninglevels",
+          "type": "array"
+        },
+        "pricing": {
+          "$ref": "#/$defs/ModelPricing"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "ModelConfig",
+      "type": "object"
+    },
+    "ModelPricing": {
+      "additionalProperties": false,
+      "properties": {
+        "inputPerMillion": {
+          "default": 0.0,
+          "title": "Inputpermillion",
+          "type": "number"
+        },
+        "outputPerMillion": {
+          "default": 0.0,
+          "title": "Outputpermillion",
+          "type": "number"
+        },
+        "cacheHitPerMillion": {
+          "default": 0.0,
+          "title": "Cachehitpermillion",
+          "type": "number"
+        }
+      },
+      "title": "ModelPricing",
+      "type": "object"
+    },
+    "PermissionConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "read": {
+          "$ref": "#/$defs/CommandPermission"
+        },
+        "write": {
+          "$ref": "#/$defs/CommandPermission"
+        },
+        "shell": {
+          "$ref": "#/$defs/CommandPermission"
+        },
+        "network": {
+          "$ref": "#/$defs/CommandPermission"
+        },
+        "interaction": {
+          "$ref": "#/$defs/CommandPermission"
+        },
+        "task": {
+          "$ref": "#/$defs/CommandPermission"
+        }
+      },
+      "title": "PermissionConfig",
+      "type": "object"
+    },
+    "ProviderConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "title": "Name",
+          "type": "string"
+        },
+        "protocol": {
+          "default": "openai-chat",
+          "enum": [
+            "openai-chat",
+            "mock"
+          ],
+          "title": "Protocol",
+          "type": "string"
+        },
+        "baseUrl": {
+          "default": "https://api.deepseek.com",
+          "title": "Baseurl",
+          "type": "string"
+        },
+        "apiKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Apikey"
+        },
+        "apiKeyEnv": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Apikeyenv"
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Headers",
+          "type": "object"
+        },
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "models": {
+          "items": {
+            "$ref": "#/$defs/ModelConfig"
+          },
+          "title": "Models",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "ProviderConfig",
+      "type": "object"
+    },
+    "SecurityConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "allowOutsideWorkspace": {
+          "default": false,
+          "title": "Allowoutsideworkspace",
+          "type": "boolean"
+        },
+        "maxUploadMb": {
+          "default": 20,
+          "maximum": 500,
+          "minimum": 1,
+          "title": "Maxuploadmb",
+          "type": "integer"
+        },
+        "maxFileReadBytes": {
+          "default": 512000,
+          "maximum": 20000000,
+          "minimum": 1000,
+          "title": "Maxfilereadbytes",
+          "type": "integer"
+        },
+        "shellTimeoutSeconds": {
+          "default": 60,
+          "maximum": 3600,
+          "minimum": 1,
+          "title": "Shelltimeoutseconds",
+          "type": "integer"
+        },
+        "blockPrivateNetwork": {
+          "default": true,
+          "title": "Blockprivatenetwork",
+          "type": "boolean"
+        }
+      },
+      "title": "SecurityConfig",
+      "type": "object"
+    },
+    "ServerConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "default": "127.0.0.1",
+          "title": "Host",
+          "type": "string"
+        },
+        "port": {
+          "default": 8787,
+          "maximum": 65535,
+          "minimum": 1,
+          "title": "Port",
+          "type": "integer"
+        },
+        "corsOrigins": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Corsorigins",
+          "type": "array"
+        },
+        "requestTimeoutSeconds": {
+          "default": 120,
+          "maximum": 3600,
+          "minimum": 1,
+          "title": "Requesttimeoutseconds",
+          "type": "integer"
+        },
+        "logLevel": {
+          "default": "INFO",
+          "title": "Loglevel",
+          "type": "string"
+        }
+      },
+      "title": "ServerConfig",
+      "type": "object"
+    },
+    "TaskConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "waitTimeoutSeconds": {
+          "default": 120,
+          "maximum": 3600,
+          "minimum": 1,
+          "title": "Waittimeoutseconds",
+          "type": "integer"
+        },
+        "autoContinueAfterCompletion": {
+          "default": true,
+          "title": "Autocontinueaftercompletion",
+          "type": "boolean"
+        }
+      },
+      "title": "TaskConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "server": {
+      "$ref": "#/$defs/ServerConfig"
+    },
+    "general": {
+      "$ref": "#/$defs/GeneralConfig"
+    },
+    "defaults": {
+      "$ref": "#/$defs/DefaultsConfig"
+    },
+    "providers": {
+      "items": {
+        "$ref": "#/$defs/ProviderConfig"
+      },
+      "title": "Providers",
+      "type": "array"
+    },
+    "permissions": {
+      "$ref": "#/$defs/PermissionConfig"
+    },
+    "budget": {
+      "$ref": "#/$defs/BudgetConfig"
+    },
+    "compaction": {
+      "$ref": "#/$defs/CompactionConfig"
+    },
+    "tasks": {
+      "$ref": "#/$defs/TaskConfig"
+    },
+    "security": {
+      "$ref": "#/$defs/SecurityConfig"
+    },
+    "dataDir": {
+      "format": "path",
+      "title": "Datadir",
+      "type": "string"
+    },
+    "workspaceRoot": {
+      "format": "path",
+      "title": "Workspaceroot",
+      "type": "string"
+    },
+    "configPath": {
+      "anyOf": [
+        {
+          "format": "path",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Configpath"
+    },
+    "source": {
+      "default": "built-in",
+      "title": "Source",
+      "type": "string"
+    }
+  },
+  "title": "Mini Agent configuration",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mini-agent.local/config.schema.json"
+}

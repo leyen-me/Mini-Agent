@@ -1,0 +1,136 @@
+"""Configuration layering, schema validation and secret hygiene."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+import yaml
+from jsonschema import Draft202012Validator
+
+from mini_agent.config import (
+    AppConfig,
+    DefaultsConfig,
+    ModelConfig,
+    ProviderConfig,
+    ResolutionError,
+    deep_merge,
+    load_config,
+    sanitize_config,
+)
+
+
+def test_deep_merge_is_recursive_and_does_not_mutate_inputs():
+    base = {"a": {"b": 1, "c": 2}, "list": [1, 2]}
+    override = {"a": {"b": 9}, "list": [3]}
+    merged = deep_merge(base, override)
+    assert merged == {"a": {"b": 9, "c": 2}, "list": [3]}
+    assert base == {"a": {"b": 1, "c": 2}, "list": [1, 2]}
+
+
+def test_file_then_workspace_local_precedence(tmp_path: Path, monkeypatch):
+    project = tmp_path / "mini-agent.yaml"
+    project.write_text(
+        """
+general:
+  language: en-US
+  theme: dark
+defaults:
+  model: mock/echo
+  agent: build
+providers:
+  - id: mock
+    name: Mock
+    protocol: mock
+    models:
+      - id: echo
+        contextWindow: 8000
+""",
+        encoding="utf-8",
+    )
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "workspace.yaml").write_text(
+        """
+general:
+  language: zh-CN
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MINI_AGENT_CONFIG", str(project))
+    monkeypatch.setenv("MINI_AGENT_DATA_DIR", str(data_dir))
+    monkeypatch.delenv("MINI_AGENT_WORKSPACE_ROOT", raising=False)
+    config = load_config()
+    assert config.general.language == "zh-CN"
+    assert config.general.theme == "dark"
+    assert config.workspace_root == (data_dir / "workspaces" / "demo").resolve()
+    assert config.source.endswith("workspace.yaml")
+
+
+def test_env_interpolation_and_secret_file_never_serialized(tmp_path: Path, monkeypatch):
+    secret = "sk-test-secret-value-99887766"
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "secrets.yaml").write_text(f"providers:\n  deepseek: {secret}\n", encoding="utf-8")
+    project = tmp_path / "config.yaml"
+    project.write_text(
+        """
+general:
+  language: zh-CN
+providers:
+  - id: deepseek
+    name: DeepSeek
+    protocol: openai-chat
+    baseUrl: https://api.deepseek.com
+    apiKey: ${env:MINI_AGENT_TEST_KEY}
+    models:
+      - id: deepseek-chat
+        contextWindow: 128000
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MINI_AGENT_CONFIG", str(project))
+    monkeypatch.setenv("MINI_AGENT_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("MINI_AGENT_TEST_KEY", "env-key-should-not-win")
+    config = load_config()
+    assert config.providers[0].api_key == secret
+    public = sanitize_config(config)
+    serialized = str(public)
+    assert secret not in serialized
+    assert "env-key-should-not-win" not in serialized
+    assert public["providers"][0]["key_hint"].endswith("7766")
+
+
+def test_invalid_config_file_fails_fast(tmp_path: Path, monkeypatch):
+    path = tmp_path / "bad.yaml"
+    path.write_text("general: [not-an-object]\n", encoding="utf-8")
+    monkeypatch.setenv("MINI_AGENT_CONFIG", str(path))
+    monkeypatch.setenv("MINI_AGENT_DATA_DIR", str(tmp_path / "data"))
+    with pytest.raises((ResolutionError, ValueError)):
+        load_config()
+
+
+def test_example_config_matches_schema_and_loads():
+    root = Path(__file__).resolve().parents[2]
+    schema = json.loads((root / "config" / "config.schema.json").read_text(encoding="utf-8"))
+    example = yaml.safe_load((root / "config" / "mini-agent.example.yaml").read_text(encoding="utf-8"))
+    errors = sorted(Draft202012Validator(schema).iter_errors(example), key=lambda error: list(error.path))
+    assert errors == []
+    config = load_config(root / "config" / "mini-agent.example.yaml")
+    assert config.defaults.model == "mock/echo"
+    assert config.providers[0].protocol == "mock"
+
+
+def test_duplicate_default_model_falls_back_at_app_level():
+    config = AppConfig(
+        defaults=DefaultsConfig(model="missing/model"),
+        providers=[
+            ProviderConfig(
+                id="mock",
+                protocol="mock",
+                models=[ModelConfig(id="echo")],
+            )
+        ],
+    )
+    assert config.defaults.model == "mock/echo"
